@@ -48,15 +48,17 @@ type CreateOpts struct {
 	AllowCollaboration bool
 	SquashBeforeMerge  bool
 
-	Autofill       bool
-	FillCommitBody bool
-	IsDraft        bool
-	IsWIP          bool
-	ShouldPush     bool
-	NoEditor       bool
-	IsInteractive  bool
-	Yes            bool
-	Web            bool
+	Autofill           bool
+	FillCommitBody     bool
+	DescriptionFilter  string
+	DescriptionReplace string
+	IsDraft            bool
+	IsWIP              bool
+	ShouldPush         bool
+	NoEditor           bool
+	IsInteractive      bool
+	Yes                bool
+	Web                bool
 
 	IO       *iostreams.IOStreams
 	Branch   func() (string, error)
@@ -134,6 +136,11 @@ func NewCmdCreate(f *cmdutils.Factory, runE func(opts *CreateOpts) error) *cobra
 			if !opts.Autofill && opts.FillCommitBody {
 				return &cmdutils.FlagError{Err: errors.New("--fill-commit-body should be used with --fill")}
 			}
+			if opts.DescriptionFilter != "" {
+				if _, err := regexp.Compile(opts.DescriptionFilter); err != nil {
+					return &cmdutils.FlagError{Err: errors.New(fmt.Sprintf("--description-filter should be a regexp pattern: %s", err))}
+				}
+			}
 			// Remove this once --yes does more than just skip the prompts that --web happen to skip
 			// by design
 			if opts.Yes && opts.Web {
@@ -153,6 +160,8 @@ func NewCmdCreate(f *cmdutils.Factory, runE func(opts *CreateOpts) error) *cobra
 	}
 	mrCreateCmd.Flags().BoolVarP(&opts.Autofill, "fill", "f", false, "Do not prompt for title/description and just use commit info")
 	mrCreateCmd.Flags().BoolVarP(&opts.FillCommitBody, "fill-commit-body", "", false, "Fill description with each commit body when multiple commits. Can only be used with --fill")
+	mrCreateCmd.Flags().StringVarP(&opts.DescriptionFilter, "description-filter", "", "", "Filter/replace description (this is a match pattern, replacement is --description-replace)")
+	mrCreateCmd.Flags().StringVarP(&opts.DescriptionReplace, "description-replace", "", "", "Replace for a pattern (see --description-filter). Can only be used with --description-filter")
 	mrCreateCmd.Flags().BoolVarP(&opts.IsDraft, "draft", "", false, "Mark merge request as a draft")
 	mrCreateCmd.Flags().BoolVarP(&opts.IsWIP, "wip", "", false, "Mark merge request as a work in progress. Alternative to --draft")
 	mrCreateCmd.Flags().BoolVarP(&opts.ShouldPush, "push", "", false, "Push committed changes after creating merge request. Make sure you have committed changes")
@@ -601,6 +610,10 @@ func mrBodyAndTitle(opts *CreateOpts) error {
 			}
 			opts.Description = body.String()
 		}
+	}
+	if opts.DescriptionFilter != "" {
+		re := regexp.MustCompile(opts.DescriptionFilter)
+		opts.Description = re.ReplaceAllString(opts.Description, opts.DescriptionReplace)
 	}
 	return nil
 }
