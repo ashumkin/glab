@@ -50,6 +50,8 @@ type CreateOpts struct {
 
 	Autofill           bool
 	FillCommitBody     bool
+	TitleFilter        string
+	TitleReplace       string
 	DescriptionFilter  string
 	DescriptionReplace string
 	IsDraft            bool
@@ -141,6 +143,11 @@ func NewCmdCreate(f *cmdutils.Factory, runE func(opts *CreateOpts) error) *cobra
 					return &cmdutils.FlagError{Err: errors.New(fmt.Sprintf("--description-filter should be a regexp pattern: %s", err))}
 				}
 			}
+			if opts.TitleFilter != "" {
+				if _, err := regexp.Compile(opts.TitleFilter); err != nil {
+					return &cmdutils.FlagError{Err: errors.New(fmt.Sprintf("--title-filter should be a regexp pattern: %s", err))}
+				}
+			}
 			// Remove this once --yes does more than just skip the prompts that --web happen to skip
 			// by design
 			if opts.Yes && opts.Web {
@@ -160,6 +167,8 @@ func NewCmdCreate(f *cmdutils.Factory, runE func(opts *CreateOpts) error) *cobra
 	}
 	mrCreateCmd.Flags().BoolVarP(&opts.Autofill, "fill", "f", false, "Do not prompt for title/description and just use commit info")
 	mrCreateCmd.Flags().BoolVarP(&opts.FillCommitBody, "fill-commit-body", "", false, "Fill description with each commit body when multiple commits. Can only be used with --fill")
+	mrCreateCmd.Flags().StringVarP(&opts.TitleFilter, "title-filter", "", "", "Filter/replace title (this is a match pattern, replacement is --title-replace)")
+	mrCreateCmd.Flags().StringVarP(&opts.TitleReplace, "title-replace", "", "", "Replace for a pattern (see --title-filter). Can only be used with --title-filter")
 	mrCreateCmd.Flags().StringVarP(&opts.DescriptionFilter, "description-filter", "", "", "Filter/replace description (this is a match pattern, replacement is --description-replace)")
 	mrCreateCmd.Flags().StringVarP(&opts.DescriptionReplace, "description-replace", "", "", "Replace for a pattern (see --description-filter). Can only be used with --description-filter")
 	mrCreateCmd.Flags().BoolVarP(&opts.IsDraft, "draft", "", false, "Mark merge request as a draft")
@@ -610,6 +619,10 @@ func mrBodyAndTitle(opts *CreateOpts) error {
 			}
 			opts.Description = body.String()
 		}
+	}
+	if opts.TitleFilter != "" {
+		re := regexp.MustCompile(opts.TitleFilter)
+		opts.Title = re.ReplaceAllString(opts.Title, opts.TitleReplace)
 	}
 	if opts.DescriptionFilter != "" {
 		re := regexp.MustCompile(opts.DescriptionFilter)

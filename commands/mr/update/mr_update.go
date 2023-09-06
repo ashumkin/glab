@@ -3,6 +3,7 @@ package update
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"gitlab.com/gitlab-org/cli/api"
@@ -80,6 +81,7 @@ func NewCmdUpdate(f *cmdutils.Factory) *cobra.Command {
 
 			l := &gitlab.UpdateMergeRequestOptions{}
 			var mergeTitle string
+			var mergeDescription string
 
 			isDraft, _ := cmd.Flags().GetBool("draft")
 			isWIP, _ := cmd.Flags().GetBool("wip")
@@ -94,6 +96,7 @@ func NewCmdUpdate(f *cmdutils.Factory) *cobra.Command {
 					return err
 				}
 				mergeTitle = mr.Title
+				mergeDescription = mr.Description
 			}
 			if isDraft || isWIP {
 				if isDraft {
@@ -114,7 +117,14 @@ func NewCmdUpdate(f *cmdutils.Factory) *cobra.Command {
 				mergeTitle = strings.TrimSpace(mergeTitle)
 			}
 
+			if tf, _ := cmd.Flags().GetString("title-filter"); tf != "" {
+				re := regexp.MustCompile(tf)
+				tr, _ := cmd.Flags().GetString("title-replace")
+				mergeTitle = re.ReplaceAllString(mergeTitle, tr)
+				actions = append(actions, fmt.Sprintf("updated title to %q", mergeTitle))
+			}
 			l.Title = gitlab.String(mergeTitle)
+
 			if m, _ := cmd.Flags().GetBool("lock-discussion"); m {
 				actions = append(actions, "locked discussion")
 				l.DiscussionLocked = gitlab.Bool(m)
@@ -125,8 +135,17 @@ func NewCmdUpdate(f *cmdutils.Factory) *cobra.Command {
 			}
 
 			if m, _ := cmd.Flags().GetString("description"); m != "" {
-				actions = append(actions, "updated description")
-				l.Description = gitlab.String(m)
+				mergeDescription = m
+			}
+
+			if df, _ := cmd.Flags().GetString("description-filter"); df != "" {
+				re := regexp.MustCompile(df)
+				dr, _ := cmd.Flags().GetString("description-replace")
+				mergeDescription = re.ReplaceAllString(mergeDescription, dr)
+			}
+			if mergeDescription != "" {
+				actions = append(actions, fmt.Sprintf("updated description"))
+				l.Description = gitlab.String(mergeDescription)
 			}
 
 			if m, _ := cmd.Flags().GetStringSlice("label"); len(m) != 0 {
@@ -232,6 +251,10 @@ func NewCmdUpdate(f *cmdutils.Factory) *cobra.Command {
 	mrUpdateCmd.Flags().BoolP("lock-discussion", "", false, "Lock discussion on merge request")
 	mrUpdateCmd.Flags().BoolP("unlock-discussion", "", false, "Unlock discussion on merge request")
 	mrUpdateCmd.Flags().StringP("description", "d", "", "merge request description")
+	mrUpdateCmd.Flags().StringP("title-filter", "", "", "Filter/replace title (this is a match pattern, replacement is --title-replace)")
+	mrUpdateCmd.Flags().StringP("title-replace", "", "", "Replace for a pattern (see --title-filter). Can only be used with --title-filter")
+	mrUpdateCmd.Flags().StringP("description-filter", "", "", "Filter/replace description (this is a match pattern, replacement is --description-replace)")
+	mrUpdateCmd.Flags().StringP("description-replace", "", "", "Replace for a pattern (see --description-filter). Can only be used with --description-filter")
 	mrUpdateCmd.Flags().StringSliceP("label", "l", []string{}, "add labels")
 	mrUpdateCmd.Flags().StringSliceP("unlabel", "u", []string{}, "remove labels")
 	mrUpdateCmd.Flags().StringSliceP("assignee", "a", []string{}, "assign users via username, prefix with '!' or '-' to remove from existing assignees, '+' to add, otherwise replace existing assignees with given users")
