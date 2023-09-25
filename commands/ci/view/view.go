@@ -39,6 +39,7 @@ type ViewOpts struct {
 	Output    io.Writer
 
 	OpenInBrowser bool
+	User      *gitlab.BasicUser
 }
 
 type ViewJobKind int64
@@ -171,6 +172,11 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				return utils.OpenInBrowser(webURL, browser)
 			}
 
+			p, err := api.GetSinglePipeline(opts.ApiClient, opts.Commit.LastPipeline.ID, opts.ProjectID)
+			if err != nil {
+				return fmt.Errorf("Can't get pipeline #%d info: %s", opts.Commit.LastPipeline.ID, err)
+			}
+			opts.User = p.User
 			pipelines = make([]gitlab.PipelineInfo, 0, 10)
 
 			return drawView(opts)
@@ -188,7 +194,7 @@ func drawView(opts ViewOpts) error {
 	root := tview.NewPages()
 	root.SetBorderPadding(1, 1, 2, 2).
 		SetBorder(true).
-		SetTitle(fmt.Sprintf(" Pipeline #%d triggered %s by %s ", opts.Commit.LastPipeline.ID, utils.TimeToPrettyTimeAgo(*opts.Commit.LastPipeline.CreatedAt), opts.Commit.AuthorName))
+		SetTitle(fmt.Sprintf(" Pipeline #%d triggered %s by %s ", opts.Commit.LastPipeline.ID, utils.TimeToPrettyTimeAgo(*opts.Commit.LastPipeline.CreatedAt), opts.User.Name))
 
 	boxes = make(map[string]*tview.TextView)
 	jobsCh := make(chan []*ViewJob)
