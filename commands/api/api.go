@@ -522,7 +522,7 @@ func parseErrorResponse(r io.Reader, statusCode int) (io.Reader, string, error) 
 	}
 	err = json.Unmarshal(b, &parsedBody)
 	if err != nil {
-		return r, "", err
+		return r, "", fmt.Errorf("%w: %s", err, string(b))
 	}
 	if parsedBody.Message != "" {
 		return bodyCopy, fmt.Sprintf("%s (HTTP %d)", parsedBody.Message, statusCode), nil
