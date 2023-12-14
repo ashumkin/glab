@@ -145,7 +145,16 @@ func reviewersList(mr *gitlab.MergeRequest) string {
 
 func mrState(c *iostreams.ColorPalette, mr *gitlab.MergeRequest) (mrState string) {
 	if mr.State == "opened" {
-		mrState = c.Green("open")
+		var mrDetailedStatus string
+		if mr.DetailedMergeStatus == "mergeable" {
+			mrDetailedStatus = c.Green(" / " + mr.DetailedMergeStatus)
+		} else if mr.DetailedMergeStatus == "checking" ||
+			mr.DetailedMergeStatus == "unchecked" {
+			mrDetailedStatus = c.Yellow(" / " + mr.DetailedMergeStatus)
+		} else {
+			mrDetailedStatus = c.Red(" / " + mr.DetailedMergeStatus)
+		}
+		mrState = c.Green("open" + mrDetailedStatus)
 	} else if mr.State == "merged" {
 		mrState = c.Blue(mr.State)
 	} else {
