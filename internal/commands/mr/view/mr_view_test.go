@@ -622,3 +622,103 @@ func Test_printTTYMRPreview_closedMRWithNilClosedBy(t *testing.T) {
 	assert.Contains(t, output, "Closed")
 	assert.NotContains(t, output, "Closed by:")
 }
+
+func testColor(color string) func(string) string {
+	return func(s string) string {
+		return fmt.Sprintf("[%s]%s", color, s)
+	}
+}
+
+func Test_mrState(t *testing.T) {
+	ioStreams, _, _, _ := cmdtest.TestIOStreams(cmdtest.WithTestIOStreamsAsTTY(true))
+	colorPallette := ioStreams.Color()
+	colorPallette.Green = testColor("green")
+	colorPallette.Red = testColor("red")
+	colorPallette.Yellow = testColor("yellow")
+	colorPallette.Blue = testColor("blue")
+	type args struct {
+		mr gitlab.MergeRequest
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "mr state open/mergeable",
+			args: args{
+				mr: gitlab.MergeRequest{
+					BasicMergeRequest: gitlab.BasicMergeRequest{
+						State:               "opened",
+						DetailedMergeStatus: "mergeable",
+					},
+				},
+			},
+			want: "[green]open[green] / mergeable",
+		},
+		{
+			name: "mr state open/checking",
+			args: args{
+				mr: gitlab.MergeRequest{
+					BasicMergeRequest: gitlab.BasicMergeRequest{
+						State:               "opened",
+						DetailedMergeStatus: "checking",
+					},
+				},
+			},
+			want: "[green]open[yellow] / checking",
+		},
+		{
+			name: "mr state open/unchecked",
+			args: args{
+				mr: gitlab.MergeRequest{
+					BasicMergeRequest: gitlab.BasicMergeRequest{
+						State:               "opened",
+						DetailedMergeStatus: "unchecked",
+					},
+				},
+			},
+			want: "[green]open[yellow] / unchecked",
+		},
+		{
+			name: "mr state open/conflict",
+			args: args{
+				mr: gitlab.MergeRequest{
+					BasicMergeRequest: gitlab.BasicMergeRequest{
+						State:               "opened",
+						DetailedMergeStatus: "conflict",
+					},
+				},
+			},
+			want: "[green]open[red] / conflict",
+		},
+		{
+			name: "mr state merged",
+			args: args{
+				mr: gitlab.MergeRequest{
+					BasicMergeRequest: gitlab.BasicMergeRequest{
+						State:               "merged",
+						DetailedMergeStatus: "doesn't-matter",
+					},
+				},
+			},
+			want: "[blue]merged",
+		},
+		{
+			name: "mr state other",
+			args: args{
+				mr: gitlab.MergeRequest{
+					BasicMergeRequest: gitlab.BasicMergeRequest{
+						State:               "other",
+						DetailedMergeStatus: "doesn't-matter",
+					},
+				},
+			},
+			want: "[red]other",
+		},
+	}
+	for _, tt := range tests {
+		got := mrState(colorPallette, &tt.args.mr)
+		assert.Equal(t, tt.want, got)
+	}
+}

@@ -178,7 +178,16 @@ func reviewersList(mr *gitlab.MergeRequest) string {
 func mrState(c *iostreams.ColorPalette, mr *gitlab.MergeRequest) string {
 	switch mr.State {
 	case "opened":
-		return c.Green("open")
+		var mrDetailedStatus string
+		switch mr.DetailedMergeStatus {
+		case "mergeable":
+			mrDetailedStatus = c.Green(" / " + mr.DetailedMergeStatus)
+		case "checking", "unchecked":
+			mrDetailedStatus = c.Yellow(" / " + mr.DetailedMergeStatus)
+		default:
+			mrDetailedStatus = c.Red(" / " + mr.DetailedMergeStatus)
+		}
+		return c.Green("open" + mrDetailedStatus)
 	case "merged":
 		return c.Blue(mr.State)
 	default:
