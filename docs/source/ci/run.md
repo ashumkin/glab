@@ -60,7 +60,7 @@ glab ci run
 glab ci run --variables \"key1:value,with,comma\"
 glab ci run -b main
 glab ci run --web
-glab ci run --mr
+glab ci run --mr [MR]
 
 # Specify CI variables
 glab ci run -b main --variables-env key1:val1
@@ -93,7 +93,7 @@ glab ci run -b main --variables-from variables.json
 ```plaintext
   -b, --branch string            Create pipeline on branch or reference <string>.
   -i, --input stringArray        Pass inputs to pipeline in format '<key>:<value>'. Cannot be used for merge request pipelines. See documentation for examples.
-      --mr                       Run merge request pipeline instead of branch pipeline.
+      --mr                       Run merge request [MR] pipeline instead of branch pipeline.
       --variables strings        Pass variables to the pipeline in the format <key>:<value>. Cannot be used for MR pipelines.
       --variables-env strings    Pass variables to the pipeline in the format <key>:<value>. Cannot be used for MR pipelines.
       --variables-file strings   Pass file contents as a file variable to the pipeline in the format <key>:<filename>. Cannot be used for MR pipelines.
