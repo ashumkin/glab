@@ -1500,6 +1500,23 @@ func TestCIView(t *testing.T) {
 			},
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/5 in your browser.\n",
 		},
+		{
+			name: "view ci pipeline on web for a given MR id",
+			cli:  "--web --mr 6",
+			setupMock: func(tc *gitlabtesting.TestClient) {
+				tc.MockMergeRequests.EXPECT().
+					ListMergeRequestPipelines("OWNER/REPO", gomock.Any()).
+					Return([]*gitlab.PipelineInfo{
+						{
+							ID:        8,
+							WebURL:    "https://gitlab.com/OWNER/REPO/-/pipelines/8",
+							CreatedAt: &createdAt,
+							SHA:       "2dc6aa325a317eda67812f05600bdf0fcdc70ab0",
+						},
+					}, nil, nil)
+			},
+			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/8 in your browser.\n",
+		},
 	}
 
 	for _, tc := range tests {
