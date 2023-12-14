@@ -8,12 +8,14 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
 	"gitlab.com/gitlab-org/cli/internal/api"
 	"gitlab.com/gitlab-org/cli/internal/cmdutils"
 	"gitlab.com/gitlab-org/cli/internal/commands/ci/ciutils"
+	"gitlab.com/gitlab-org/cli/internal/commands/mr/mrutils"
 	"gitlab.com/gitlab-org/cli/internal/config"
 	"gitlab.com/gitlab-org/cli/internal/git"
 	"gitlab.com/gitlab-org/cli/internal/glrepo"
@@ -34,12 +36,14 @@ import (
 
 type options struct {
 	io         *iostreams.IOStreams
+	factory    cmdutils.Factory
 	httpClient func() (*gitlab.Client, error)
 	baseRepo   func() (glrepo.Interface, error)
 	config     func() config.Config
 
 	refName       string
 	openInBrowser bool
+	forMR         bool
 }
 
 type ViewJobKind int64
@@ -100,6 +104,7 @@ func ViewJobFromJob(job *gitlab.Job) *ViewJob {
 
 func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	opts := options{
+		factory:    f, // quick fix
 		io:         f.IO(),
 		httpClient: f.HttpClient,
 		baseRepo:   f.BaseRepo,
@@ -139,12 +144,13 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 				return err
 			}
 
-			return opts.run()
+			return opts.run(args)
 		},
 	}
 
 	pipelineCIView.Flags().
 		StringVarP(&opts.refName, "branch", "b", "", "Check pipeline status for a branch or tag. Defaults to the current branch.")
+	pipelineCIView.Flags().BoolVarP(&opts.forMR, "mr", "m", false, "Check pipeline status for a MR. (Default is the current MR)")
 	pipelineCIView.Flags().BoolVarP(&opts.openInBrowser, "web", "w", false, "Open pipeline in a browser. Uses default browser, or browser specified in BROWSER variable.")
 
 	return pipelineCIView
@@ -166,7 +172,7 @@ func (o *options) complete(args []string) error {
 	return nil
 }
 
-func (o *options) run() error {
+func (o *options) run(args []string) error {
 	apiClient, err := o.httpClient()
 	if err != nil {
 		return err
@@ -179,14 +185,50 @@ func (o *options) run() error {
 
 	projectID := repo.FullName()
 
-	commit, _, err := apiClient.Commits.GetCommit(projectID, o.refName, nil)
-	if err != nil {
-		return err
-	}
+	var commit *gitlab.Commit
+	commit, _, err = apiClient.Commits.GetCommit(projectID, o.refName, nil)
+	var commitSHA string
+	if o.forMR {
+		var mrIDStr string
+		var mrID int
+		if len(args) > 0 {
+			mrIDStr = args[0]
+		}
+		if len(mrIDStr) > 0 {
+			mrID, err = strconv.Atoi(mrIDStr)
+			if err != nil {
+				return fmt.Errorf("MR ID id not an integer: %s (%w)", mrIDStr, err)
+			}
+		}
+		if mrID == 0 {
+			mr, _, err := mrutils.MRFromArgs(o.factory, args, "any")
+			if err != nil {
+				return err
+			}
+			mrID = mr.IID
+		}
+		pipeInfos, _, err := apiClient.MergeRequests.ListMergeRequestPipelines(repo.FullName(), mrID)
+		if err != nil {
+			return err
+		}
+		if len(pipeInfos) == 0 {
+			return fmt.Errorf("Cannot find pipelines for MR %d", mrID)
+		}
+		commit = &gitlab.Commit{
+			ID:           pipeInfos[0].SHA,
+			LastPipeline: pipeInfos[0],
+		}
+		commitSHA = commit.ID
+	} else {
+		commit, _, err = apiClient.Commits.GetCommit(projectID, o.refName, nil)
+		if err != nil {
+			return err
+		}
 
-	commitSHA := commit.ID
-	if commit.LastPipeline == nil {
-		return fmt.Errorf("Can't find pipeline for commit: %s", commitSHA)
+		commitSHA = commit.ID
+		if commit.LastPipeline == nil {
+			return fmt.Errorf("Can't find pipeline for commit: %s", commitSHA)
+		}
 	}
 
 	cfg := o.config()
@@ -330,36 +372,48 @@ func inputCapture(
 				break
 			}
 			modalVisible = true
-			modal := tview.NewModal().
-				SetBackgroundColor(tcell.ColorDefault).
-				SetText(fmt.Sprintf("Are you sure you want to run %s?", curJob.Name)).
-				AddButtons([]string{"✘ No", "✔ Yes"}).
-				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-					modalVisible = false
-					root.RemovePage("yesno")
-					if buttonLabel != "✔ Yes" {
+			if curJob.Status == "created" {
+				modal := tview.NewModal().
+					SetText(fmt.Sprintf("The job %s is not retriable", curJob.Name)).
+					AddButtons([]string{"OK"}).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						modalVisible = false
+						root.RemovePage("ok")
 						app.ForceDraw()
-						return
-					}
-					root.RemovePage("logs-" + curJob.Name)
-					app.ForceDraw()
+					})
+				root.AddAndSwitchToPage("ok", modal, false)
+			} else {
+				modal := tview.NewModal().
+					SetBackgroundColor(tcell.ColorDefault).
+					SetText(fmt.Sprintf("Are you sure you want to run %s?", curJob.Name)).
+					AddButtons([]string{"✘ No", "✔ Yes"}).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						modalVisible = false
+						root.RemovePage("yesno")
+						if buttonLabel != "✔ Yes" {
+							app.ForceDraw()
+							return
+						}
+						root.RemovePage("logs-" + curJob.Name)
+						app.ForceDraw()
 
-					job, err := api.PlayOrRetryJobs(
-						apiClient,
-						projectID,
-						curJob.ID,
-						curJob.Status,
-					)
-					if err != nil {
-						app.Stop()
-						log.Fatal(err)
-					}
-					if job != nil {
-						curJob = ViewJobFromJob(job)
-						app.ForceDraw()
-					}
-				})
-			root.AddAndSwitchToPage("yesno", modal, false)
+						job, err := api.PlayOrRetryJobs(
+							apiClient,
+							projectID,
+							curJob.ID,
+							curJob.Status,
+						)
+						if err != nil {
+							app.Stop()
+							log.Fatal(err)
+						}
+						if job != nil {
+							curJob = ViewJobFromJob(job)
+							app.ForceDraw()
+						}
+					})
+				root.AddAndSwitchToPage("yesno", modal, false)
+			}
 			inputCh <- struct{}{}
 			app.ForceDraw()
 			return nil
