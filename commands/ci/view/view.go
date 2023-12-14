@@ -8,8 +8,11 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
+
+	"gitlab.com/gitlab-org/cli/commands/mr/mrutils"
 
 	"gitlab.com/gitlab-org/cli/api"
 	"gitlab.com/gitlab-org/cli/commands/ci/ciutils"
@@ -40,6 +43,7 @@ type ViewOpts struct {
 
 	OpenInBrowser bool
 	PipelineUser  *gitlab.BasicUser
+	forMR         bool
 }
 
 type ViewJobKind int64
@@ -149,14 +153,44 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				}
 			}
 
-			opts.Commit, err = api.GetCommit(opts.ApiClient, opts.ProjectID, opts.RefName)
-			if err != nil {
-				return err
-			}
+			if opts.forMR {
+				mrIDStr := cmd.Flags().Arg(0)
+				var mrID int
+				if len(mrIDStr) > 0 {
+					mrID, err = strconv.Atoi(mrIDStr)
+					if err != nil {
+						return fmt.Errorf("MR ID id not an integer: %s (%w)", mrIDStr, err)
+					}
+				}
+				if mrID == 0 {
+					mr, _, err := mrutils.MRFromArgs(f, args, "any")
+					if err != nil {
+						return err
+					}
+					mrID = mr.IID
+				}
+				pipeInfos, _, err := opts.ApiClient.MergeRequests.ListMergeRequestPipelines(repo.FullName(), mrID)
+				if err != nil {
+					return err
+				}
+				if len(pipeInfos) == 0 {
+					return fmt.Errorf("Cannot find pipelines for MR %d", mrID)
+				}
+				opts.Commit = &gitlab.Commit{
+					ID:           pipeInfos[0].SHA,
+					LastPipeline: pipeInfos[0],
+				}
+				opts.CommitSHA = opts.Commit.ID
+			} else {
+				opts.Commit, err = api.GetCommit(opts.ApiClient, opts.ProjectID, opts.RefName)
+				if err != nil {
+					return err
+				}
 
-			opts.CommitSHA = opts.Commit.ID
-			if opts.Commit.LastPipeline == nil {
-				return fmt.Errorf("Can't find pipeline for commit: %s", opts.CommitSHA)
+				opts.CommitSHA = opts.Commit.ID
+				if opts.Commit.LastPipeline == nil {
+					return fmt.Errorf("Can't find pipeline for commit: %s", opts.CommitSHA)
+				}
 			}
 
 			cfg, _ := f.Config()
@@ -185,6 +219,7 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 
 	pipelineCIView.Flags().
 		StringVarP(&opts.RefName, "branch", "b", "", "Check pipeline status for a branch or tag. Defaults to the current branch.")
+	pipelineCIView.Flags().BoolVarP(&opts.forMR, "mr", "m", false, "Check pipeline status for a MR. (Default is the current MR)")
 	pipelineCIView.Flags().BoolVarP(&opts.OpenInBrowser, "web", "w", false, "Open pipeline in a browser. Uses default browser, or browser specified in BROWSER variable.")
 
 	return pipelineCIView
