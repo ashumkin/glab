@@ -594,7 +594,9 @@ func jobsView(
 			b.SetTextAlign(tview.AlignCenter)
 		}
 	}
-	lastStage = jobs[0].Stage
+	if len(jobs) > 0 {
+		lastStage = jobs[0].Stage
+	}
 	rowIdx = 0
 	stageIdx = 0
 	for _, j := range jobs {
@@ -721,8 +723,8 @@ func updateJobs(
 			pipeline.ID,
 		)
 		if (len(jobs) == 0 && len(bridges) == 0) || err != nil {
-			app.Stop()
-			log.Fatal(errors.Wrap(err, "failed to find ci jobs"))
+			//app.Stop()
+			log.Print(errors.Wrap(err, "failed to find ci jobs"))
 		}
 		viewJobs := make([]*ViewJob, 0, len(jobs)+len(bridges))
 		for _, j := range jobs {
