@@ -678,6 +678,63 @@ func Test_latestJobs(t *testing.T) {
 				},
 			},
 		},
+		{
+			desc: "1 newer on the first stage",
+			jobs: []*ViewJob{
+				{
+					ID:    1,
+					Name:  "stage1-job1",
+					Stage: "stage1",
+				},
+				{
+					ID:    2,
+					Name:  "stage1-job2",
+					Stage: "stage1",
+				},
+				{
+					ID:    3,
+					Name:  "stage2-job1",
+					Stage: "stage2",
+				},
+				{
+					ID:    4,
+					Name:  "stage2-job2",
+					Stage: "stage2",
+				},
+				{
+					ID:    5,
+					Name:  "stage1-job3",
+					Stage: "stage1",
+				},
+			},
+			expected: []*ViewJob{
+				{
+					ID:    1,
+					Name:  "stage1-job1",
+					Stage: "stage1",
+				},
+				{
+					ID:    2,
+					Name:  "stage1-job2",
+					Stage: "stage1",
+				},
+				{
+					ID:    5,
+					Name:  "stage1-job3",
+					Stage: "stage1",
+				},
+				{
+					ID:    3,
+					Name:  "stage2-job1",
+					Stage: "stage2",
+				},
+				{
+					ID:    4,
+					Name:  "stage2-job2",
+					Stage: "stage2",
+				},
+			},
+		},
 	}
 
 	for _, test := range tests {
