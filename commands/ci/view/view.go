@@ -175,7 +175,7 @@ func drawView(opts ViewOpts) error {
 	root := tview.NewPages()
 	root.SetBorderPadding(1, 1, 2, 2).
 		SetBorder(true).
-		SetTitle(fmt.Sprintf(" Pipeline #%d triggered %s by %s ", opts.Commit.LastPipeline.ID, utils.TimeToPrettyTimeAgo(*opts.Commit.LastPipeline.CreatedAt), opts.User.Name))
+		SetTitle(fmt.Sprintf(" Pipeline #%d (%s) triggered %s by %s ", opts.Commit.LastPipeline.ID, opts.ProjectID, utils.TimeToPrettyTimeAgo(*opts.Commit.LastPipeline.CreatedAt), opts.User.Name))
 
 	boxes = make(map[string]*tview.TextView)
 	jobsCh := make(chan []*ViewJob)
