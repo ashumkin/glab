@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -67,13 +68,13 @@ type PipelineData struct {
 	WebURL string `json:"web_url"`
 }
 
-func createPipeline(cmd *cobra.Command, c *gitlab.CreatePipelineOptions, f cmdutils.Factory, apiClient *gitlab.Client, repo glrepo.Interface, mr bool) (*PipelineData, error) {
+func createPipeline(cmd *cobra.Command, c *gitlab.CreatePipelineOptions, f cmdutils.Factory, apiClient *gitlab.Client, repo glrepo.Interface, mrID int64) (*PipelineData, error) {
 	branch, err := resolveBranch(cmd, f)
 	if err != nil {
 		return nil, err
 	}
-	if mr {
-		pipe, err := createMrPipeline(cmd.Context(), branch, f, apiClient, repo)
+	if mrID > 0 {
+		pipe, err := createMrPipeline(cmd.Context(), branch, f, apiClient, repo, mrID)
 		if err != nil {
 			return nil, fmt.Errorf("could not create mr pipeline for branch %s: %v", branch, err)
 		}
@@ -128,20 +129,24 @@ func resolveBranch(cmd *cobra.Command, f cmdutils.Factory) (string, error) {
 	return branch, nil
 }
 
-func createMrPipeline(ctx context.Context, branch string, f cmdutils.Factory, apiClient *gitlab.Client, repo glrepo.Interface) (*gitlab.PipelineInfo, error) {
-	mr, err := mrutils.GetMRForBranch(
-		ctx,
-		f.IO(),
-		apiClient,
-		mrutils.MrOptions{
-			BaseRepo: repo, Branch: branch, State: "opened", PromptEnabled: f.IO().PromptEnabled(),
-		},
-	)
-	if err != nil {
-		return nil, err
+func createMrPipeline(ctx context.Context, branch string, f cmdutils.Factory, apiClient *gitlab.Client, repo glrepo.Interface, mrID int64) (*gitlab.PipelineInfo, error) {
+	if mrID == 0 {
+		mr, err := mrutils.GetMRForBranch(
+			ctx,
+			f.IO(),
+			apiClient,
+			mrutils.MrOptions{
+				BaseRepo: repo, Branch: branch, State: "opened", PromptEnabled: f.IO().PromptEnabled(),
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		mrID = mr.IID
 	}
 
-	pipe, _, err := apiClient.MergeRequests.CreateMergeRequestPipeline(repo.FullName(), mr.IID)
+	fmt.Fprintln(f.IO().StdOut, "Creating pipeline for MR", mrID, "...")
+	pipe, _, err := apiClient.MergeRequests.CreateMergeRequestPipeline(repo.FullName(), mrID)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +211,7 @@ func NewCmdRun(f cmdutils.Factory) *cobra.Command {
 			glab ci run --variables \"key1:value,with,comma\"
 			glab ci run -b main
 			glab ci run --web
-			glab ci run --mr
+			glab ci run --mr [MR]
 
 			# Specify CI variables
 			glab ci run -b main --variables-env key1:val1
@@ -239,7 +244,7 @@ The options for variables are incompatible with merge request pipelines.
 If used with merge request pipelines, the command fails with a message like ` + "`ERROR: if any flags in the group [output output-format] are set none of the others can be`" + `
 
 ` + cmdutils.PipelineInputsDescription,
-		Args: cobra.ExactArgs(0),
+		Args: cobra.MaximumNArgs(1),
 		Annotations: map[string]string{
 			mcpannotations.Destructive: "true",
 		},
@@ -274,7 +279,24 @@ If used with merge request pipelines, the command fails with a message like ` + 
 				c.Variables = new(pipelineVars)
 			}
 
-			pipe, err := createPipeline(cmd, c, f, client, repo, mr)
+			var mrID int64
+			if mr {
+				mrIDStr := cmd.Flags().Arg(0)
+				if len(mrIDStr) > 0 {
+					mrID, err = strconv.ParseInt(mrIDStr, 10, 0)
+					if err != nil {
+						return fmt.Errorf("MR ID is not an integer: %s (%w)", mrIDStr, err)
+					}
+				}
+				if mrID == 0 {
+					mr, _, err := mrutils.MRFromArgs(cmd.Context(), f, args, "any")
+					if err != nil {
+						return err
+					}
+					mrID = mr.IID
+				}
+			}
+			pipe, err := createPipeline(cmd, c, f, client, repo, mrID)
 			if err != nil {
 				return err
 			}
@@ -302,7 +324,7 @@ If used with merge request pipelines, the command fails with a message like ` + 
 	pipelineRunCmd.Flags().StringSliceP("variables-file", "", []string{}, "Pass file contents as a file variable to pipeline in format <key>:<filename>. Cannot be used for MR pipelines.")
 	pipelineRunCmd.Flags().StringP("variables-from", "f", "", "JSON file with variables for pipeline execution. Expects array of hashes, each with at least 'key' and 'value'. Cannot be used for MR pipelines.")
 	pipelineRunCmd.Flags().BoolVarP(&openInBrowser, "web", "w", false, "Open pipeline in a browser. Uses default browser, or browser specified in BROWSER environment variable.")
-	pipelineRunCmd.Flags().BoolVar(&mr, "mr", false, "Run merge request pipeline instead of branch pipeline.")
+	pipelineRunCmd.Flags().BoolVar(&mr, "mr", false, "Run merge request [MR] pipeline instead of branch pipeline.")
 	cmdutils.AddPipelineInputsFlag(pipelineRunCmd)
 
 	for _, flag := range []string{"variables", "variables-env", "variables-file", "variables-from", "input"} {
