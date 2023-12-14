@@ -4,15 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
-
-	"gitlab.com/gitlab-org/cli/api"
-	"gitlab.com/gitlab-org/cli/commands/cmdutils"
-	"gitlab.com/gitlab-org/cli/pkg/git"
 
 	"github.com/MakeNowJust/heredoc"
 	"github.com/spf13/cobra"
 	"github.com/xanzy/go-gitlab"
+	"gitlab.com/gitlab-org/cli/api"
+	"gitlab.com/gitlab-org/cli/commands/cmdutils"
+	"gitlab.com/gitlab-org/cli/commands/mr/mrutils"
+	"gitlab.com/gitlab-org/cli/pkg/git"
 )
 
 var (
@@ -84,13 +85,19 @@ func extractFileVar(s string) (*gitlab.PipelineVariableOptions, error) {
 	return pvar, nil
 }
 
+type runOpts struct {
+	isMergeRequest bool
+}
+
 func NewCmdRun(f *cmdutils.Factory) *cobra.Command {
+	opts := runOpts{}
 	pipelineRunCmd := &cobra.Command{
 		Use:     "run [flags]",
 		Short:   `Create or run a new CI/CD pipeline`,
 		Aliases: []string{"create"},
 		Example: heredoc.Doc(`
 	glab ci run
+	glab ci run --mr [MR]
 	glab ci run -b main
 	glab ci run -b main --variables-env key1:val1
 	glab ci run -b main --variables-env key1:val1,key2:val2
@@ -98,7 +105,7 @@ func NewCmdRun(f *cmdutils.Factory) *cobra.Command {
 	glab ci run -b main --variables-file MYKEY:file1 --variables KEY2:some_value
 	`),
 		Long: ``,
-		Args: cobra.ExactArgs(0),
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 
@@ -112,67 +119,92 @@ func NewCmdRun(f *cmdutils.Factory) *cobra.Command {
 				return err
 			}
 
-			pipelineVars := []*gitlab.PipelineVariableOptions{}
-
-			if customPipelineVars, _ := cmd.Flags().GetStringSlice("variables-env"); len(customPipelineVars) > 0 {
-				for _, v := range customPipelineVars {
-					pvar, err := extractEnvVar(v)
+			var pipe *gitlab.Pipeline
+			if opts.isMergeRequest {
+				mrIDStr := cmd.Flags().Arg(0)
+				var mrID int
+				if len(mrIDStr) > 0 {
+					mrID, err = strconv.Atoi(mrIDStr)
 					if err != nil {
-						return fmt.Errorf("parsing pipeline variable expected format KEY:VALUE: %w", err)
+						return fmt.Errorf("MR ID id not an integer: %s (%w)", mrIDStr, err)
 					}
-					pipelineVars = append(pipelineVars, pvar)
 				}
-			}
-
-			if customPipelineFileVars, _ := cmd.Flags().GetStringSlice("variables-file"); len(customPipelineFileVars) > 0 {
-				for _, v := range customPipelineFileVars {
-					pvar, err := extractFileVar(v)
+				if mrID == 0 {
+					mr, _, err := mrutils.MRFromArgs(f, args, "any")
 					if err != nil {
-						return fmt.Errorf("parsing pipeline variable expected format KEY:FILENAME: %w", err)
+						return err
 					}
-					pipelineVars = append(pipelineVars, pvar)
+					mrID = mr.IID
 				}
-			}
-
-			vf, err := cmd.Flags().GetString("variables-from")
-			if err != nil {
-				return err
-			}
-			if vf != "" {
-				b, err := os.ReadFile(vf)
+				fmt.Fprintln(f.IO.StdOut, "Creating pipeline for MR", mrID, "...")
+				pipeInfo, _, err := apiClient.MergeRequests.CreateMergeRequestPipeline(repo.FullName(), mrID)
 				if err != nil {
-					// Return the error encountered
-					return fmt.Errorf("opening variable file: %s", vf)
+					return err
 				}
-				var result []*gitlab.PipelineVariableOptions
-				err = json.Unmarshal(b, &result)
-				if err != nil {
-					return fmt.Errorf("loading pipeline values: %w", err)
-				}
-				pipelineVars = append(pipelineVars, result...)
-			}
-
-			c := &gitlab.CreatePipelineOptions{
-				Variables: &pipelineVars,
-			}
-
-			branch, err := cmd.Flags().GetString("branch")
-			if err != nil {
-				return err
-			}
-			if branch != "" {
-				c.Ref = gitlab.String(branch)
-			} else if currentBranch, err := f.Branch(); err == nil {
-				c.Ref = gitlab.String(currentBranch)
+				pipe = &gitlab.Pipeline{ID: pipeInfo.ID, Status: pipeInfo.Status, Ref: pipeInfo.Ref, WebURL: pipeInfo.WebURL}
 			} else {
-				// `ci run` is running out of a git repo
-				fmt.Fprintln(f.IO.StdOut, "not in a git repository, using repository argument")
-				c.Ref = gitlab.String(getDefaultBranch(f))
-			}
+				pipelineVars := []*gitlab.PipelineVariableOptions{}
 
-			pipe, err := api.CreatePipeline(apiClient, repo.FullName(), c)
-			if err != nil {
-				return err
+				if customPipelineVars, _ := cmd.Flags().GetStringSlice("variables-env"); len(customPipelineVars) > 0 {
+					for _, v := range customPipelineVars {
+						pvar, err := extractEnvVar(v)
+						if err != nil {
+							return fmt.Errorf("parsing pipeline variable expected format KEY:VALUE: %w", err)
+						}
+						pipelineVars = append(pipelineVars, pvar)
+					}
+				}
+
+				if customPipelineFileVars, _ := cmd.Flags().GetStringSlice("variables-file"); len(customPipelineFileVars) > 0 {
+					for _, v := range customPipelineFileVars {
+						pvar, err := extractFileVar(v)
+						if err != nil {
+							return fmt.Errorf("parsing pipeline variable expected format KEY:FILENAME: %w", err)
+						}
+						pipelineVars = append(pipelineVars, pvar)
+					}
+				}
+
+				vf, err := cmd.Flags().GetString("variables-from")
+				if err != nil {
+					return err
+				}
+				if vf != "" {
+					b, err := os.ReadFile(vf)
+					if err != nil {
+						// Return the error encountered
+						return fmt.Errorf("opening variable file: %s", vf)
+					}
+					var result []*gitlab.PipelineVariableOptions
+					err = json.Unmarshal(b, &result)
+					if err != nil {
+						return fmt.Errorf("loading pipeline values: %w", err)
+					}
+					pipelineVars = append(pipelineVars, result...)
+				}
+
+				c := &gitlab.CreatePipelineOptions{
+					Variables: &pipelineVars,
+				}
+
+				branch, err := cmd.Flags().GetString("branch")
+				if err != nil {
+					return err
+				}
+				if branch != "" {
+					c.Ref = gitlab.String(branch)
+				} else if currentBranch, err := f.Branch(); err == nil {
+					c.Ref = gitlab.String(currentBranch)
+				} else {
+					// `ci run` is running out of a git repo
+					fmt.Fprintln(f.IO.StdOut, "not in a git repository, using repository argument")
+					c.Ref = gitlab.String(getDefaultBranch(f))
+				}
+
+				pipe, err = api.CreatePipeline(apiClient, repo.FullName(), c)
+				if err != nil {
+					return err
+				}
 			}
 
 			fmt.Fprintln(f.IO.StdOut, "Created pipeline (id:", pipe.ID, "), status:", pipe.Status, ", ref:", pipe.Ref, ", weburl: ", pipe.WebURL, ")")
@@ -180,6 +212,7 @@ func NewCmdRun(f *cmdutils.Factory) *cobra.Command {
 		},
 	}
 	pipelineRunCmd.Flags().StringP("branch", "b", "", "Create pipeline on branch/ref <string>")
+	pipelineRunCmd.Flags().BoolVarP(&opts.isMergeRequest, "mr", "m", false, "Run pipeline for MR")
 	pipelineRunCmd.Flags().StringSliceVarP(&envVariables, "variables", "", []string{}, "Pass variables to pipeline in format <key>:<value>")
 	pipelineRunCmd.Flags().StringSliceVarP(&envVariables, "variables-env", "", []string{}, "Pass variables to pipeline in format <key>:<value>")
 	pipelineRunCmd.Flags().StringSliceP("variables-file", "", []string{}, "Pass file contents as a file variable to pipeline in format <key>:<filename>")
