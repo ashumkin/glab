@@ -781,7 +781,9 @@ func jobsView(
 			b.SetTextAlign(tview.AlignCenter)
 		}
 	}
-	lastStage = jobs[0].Stage
+	if len(jobs) > 0 {
+		lastStage = jobs[0].Stage
+	}
 	rowIdx = 0
 	stageIdx = 0
 	for _, j := range jobs {
