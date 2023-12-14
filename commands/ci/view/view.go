@@ -860,8 +860,10 @@ func vline(screen tcell.Screen, x, y, l int) {
 // version of a job in the provided list
 func latestJobs(jobs []*ViewJob) []*ViewJob {
 	var (
-		lastJob = make(map[string]*ViewJob, len(jobs))
-		dupIdx  = -1
+		lastJob      = make(map[string]*ViewJob, len(jobs))
+		dupIdx       = -1
+		stages       = []string{}
+		jobAndStages = map[string][]*ViewJob{}
 	)
 	for i, j := range jobs {
 		_, ok := lastJob[j.Stage+j.Name]
@@ -870,15 +872,24 @@ func latestJobs(jobs []*ViewJob) []*ViewJob {
 		}
 		// always want the latest job
 		lastJob[j.Stage+j.Name] = j
+		if len(jobAndStages[j.Stage]) == 0 {
+			stages = append(stages, j.Stage)
+		}
+		if dupIdx == -1 {
+			jobAndStages[j.Stage] = append(jobAndStages[j.Stage], j)
+		}
 	}
 	if dupIdx == -1 {
 		dupIdx = len(jobs)
 	}
 	// first duplicate marks where retries begin
 	outJobs := make([]*ViewJob, dupIdx)
-	for i := range outJobs {
-		j := jobs[i]
-		outJobs[i] = lastJob[j.Stage+j.Name]
+	var i int
+	for _, s := range stages {
+		for _, j := range jobAndStages[s] {
+			outJobs[i] = lastJob[j.Stage+j.Name]
+			i++
+		}
 	}
 
 	return outJobs
