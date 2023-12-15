@@ -339,35 +339,48 @@ func inputCapture(
 				break
 			}
 			modalVisible = true
-			modal := tview.NewModal().
-				SetText(fmt.Sprintf("Are you sure you want to run %s", curJob.Name)).
-				AddButtons([]string{"✘ No", "✔ Yes"}).
-				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-					modalVisible = false
-					root.RemovePage("yesno")
-					if buttonLabel != "✔ Yes" {
+			if curJob.Status == "created" {
+				modal := tview.NewModal().
+					SetText(fmt.Sprintf("The job %s is not retriable", curJob.Name)).
+					AddButtons([]string{"OK"}).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						modalVisible = false
+						root.RemovePage("ok")
 						app.ForceDraw()
 						return
-					}
-					root.RemovePage("logs-" + curJob.Name)
-					app.ForceDraw()
-
-					job, err := api.PlayOrRetryJobs(
-						opts.ApiClient,
-						opts.ProjectID,
-						curJob.ID,
-						curJob.Status,
-					)
-					if err != nil {
-						app.Stop()
-						log.Fatal(err)
-					}
-					if job != nil {
-						curJob = ViewJobFromJob(job)
+					})
+				root.AddAndSwitchToPage("ok", modal, false)
+			} else {
+				modal := tview.NewModal().
+					SetText(fmt.Sprintf("Are you sure you want to run %s", curJob.Name)).
+					AddButtons([]string{"✘ No", "✔ Yes"}).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						modalVisible = false
+						root.RemovePage("yesno")
+						if buttonLabel != "✔ Yes" {
+							app.ForceDraw()
+							return
+						}
+						root.RemovePage("logs-" + curJob.Name)
 						app.ForceDraw()
-					}
-				})
-			root.AddAndSwitchToPage("yesno", modal, false)
+
+						job, err := api.PlayOrRetryJobs(
+							opts.ApiClient,
+							opts.ProjectID,
+							curJob.ID,
+							curJob.Status,
+						)
+						if err != nil {
+							app.Stop()
+							log.Fatal(err)
+						}
+						if job != nil {
+							curJob = ViewJobFromJob(job)
+							app.ForceDraw()
+						}
+					})
+				root.AddAndSwitchToPage("yesno", modal, false)
+			}
 			inputCh <- struct{}{}
 			app.ForceDraw()
 			return nil
