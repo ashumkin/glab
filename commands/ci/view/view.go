@@ -913,12 +913,48 @@ func vline(screen tcell.Screen, x, y, l int) {
 // latestJobs returns a list of unique jobs favoring the last stage+name
 // version of a job in the provided list
 func latestJobs(jobs []*ViewJob) []*ViewJob {
-	var (
-		lastJob      = make(map[string]*ViewJob, len(jobs))
-		dupIdx       = -1
-		stages       = []string{}
-		jobAndStages = map[string][]*ViewJob{}
-	)
+	dupIdx, lastJob, jobAndStages := getJobStages(jobs)
+	// first duplicate marks where retries begin
+	outJobs := make([]*ViewJob, dupIdx)
+	var i int
+	for _, s := range jobAndStages.stages {
+		for _, j := range jobAndStages.jobs[s] {
+			outJobs[i] = lastJob[j.Stage+j.Name]
+			i++
+		}
+	}
+
+	return outJobs
+}
+
+type jobsAndStages struct {
+	stages []string
+	jobs   map[string][]*ViewJob
+}
+
+func (s *jobsAndStages) addStage(stage string) {
+	// add stage if it was not added, yet
+	if len(s.jobs[stage]) == 0 {
+		s.stages = append(s.stages, stage)
+	}
+}
+
+func (s *jobsAndStages) addJob(j *ViewJob) {
+	s.jobs[j.Stage] = append(s.jobs[j.Stage], j)
+}
+
+func newJobsAndStages() jobsAndStages {
+	return jobsAndStages{
+		stages: []string{},
+		jobs:   map[string][]*ViewJob{},
+	}
+}
+
+// getJobStages returns an index of first duplicated job, a map of jobs and list of stages and jobs grouped by stages
+func getJobStages(jobs []*ViewJob) (dupIdx int, lastJob map[string]*ViewJob, jobsByStages jobsAndStages) {
+	dupIdx = -1
+	lastJob = make(map[string]*ViewJob, len(jobs))
+	jobsByStages = newJobsAndStages()
 	for i, j := range jobs {
 		_, ok := lastJob[j.Stage+j.Name]
 		if dupIdx == -1 && ok {
@@ -926,25 +962,14 @@ func latestJobs(jobs []*ViewJob) []*ViewJob {
 		}
 		// always want the latest job
 		lastJob[j.Stage+j.Name] = j
-		if len(jobAndStages[j.Stage]) == 0 {
-			stages = append(stages, j.Stage)
-		}
+		jobsByStages.addStage(j.Stage)
 		if dupIdx == -1 {
-			jobAndStages[j.Stage] = append(jobAndStages[j.Stage], j)
+			jobsByStages.addJob(j)
 		}
 	}
 	if dupIdx == -1 {
 		dupIdx = len(jobs)
 	}
-	// first duplicate marks where retries begin
-	outJobs := make([]*ViewJob, dupIdx)
-	var i int
-	for _, s := range stages {
-		for _, j := range jobAndStages[s] {
-			outJobs[i] = lastJob[j.Stage+j.Name]
-			i++
-		}
-	}
 
-	return outJobs
+	return
 }
