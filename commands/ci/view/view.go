@@ -114,6 +114,7 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 		- 'Enter' to toggle through a job's logs / traces, or display a child pipeline. Trigger jobs are marked with a '»'.
 		- 'Esc' or 'q' to close the logs or trace, or return to the parent pipeline.
 		- 'Ctrl+R', 'Ctrl+P' to run, retry, or play a job. Use 'Tab' or arrow keys to navigate the modal, and 'Enter' to confirm.
+		- 'Ctrl+A' to run/retry/play manual jobs in the stage of current selected job and after
 		- 'Ctrl+D' to cancel a job. If the selected job isn't running or pending, quits the CI/CD view.
 		- 'Ctrl+Q' to quit the CI/CD view.
 		- 'Ctrl+Space' to suspend application and view the logs. Similar to 'glab pipeline ci trace'.
@@ -392,6 +393,68 @@ func inputCapture(
 					})
 				root.AddAndSwitchToPage("yesno", modal, false)
 			}
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case tcell.KeyCtrlA:
+			if modalVisible || curJob.Kind != Job {
+				break
+			}
+			modalVisible = true
+			var manualJobs []*ViewJob
+			var manualJobNames []string
+			_, _, jobAndStages := getJobStages(jobs)
+			includeStages := make(map[string]struct{})
+			for _, s := range jobAndStages.stages {
+				if len(includeStages) > 0 || curJob.Stage == s {
+					includeStages[s] = struct{}{}
+				}
+			}
+			for s := range includeStages {
+				for _, j := range jobAndStages.jobs[s] {
+					if j.Status == "manual" {
+						manualJobs = append(manualJobs, j)
+						manualJobNames = append(manualJobNames, j.Name)
+					}
+				}
+			}
+			modal := tview.NewModal().
+				SetText(
+					fmt.Sprintf("Are you sure you want to all manual jobs in stage %s and later:\n%s\n?",
+						curJob.Stage, strings.Join(manualJobNames, "\n"))).
+				AddButtons([]string{"✘ No", "✔ Yes"}).
+				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+					modalVisible = false
+					root.RemovePage("yesno")
+					if buttonLabel != "✔ Yes" {
+						app.ForceDraw()
+						return
+					}
+					for _, j := range manualJobs {
+						root.RemovePage("logs-" + j.Name)
+					}
+					app.ForceDraw()
+
+					var job *gitlab.Job
+					for _, j := range manualJobs {
+						var err error
+						job, err = api.PlayOrRetryJobs(
+							opts.ApiClient,
+							opts.ProjectID,
+							j.ID,
+							j.Status,
+						)
+						if err != nil {
+							app.Stop()
+							log.Fatal(err)
+						}
+					}
+					if job != nil {
+						curJob = ViewJobFromJob(job)
+						app.ForceDraw()
+					}
+				})
+			root.AddAndSwitchToPage("yesno", modal, false)
 			inputCh <- struct{}{}
 			app.ForceDraw()
 			return nil
@@ -926,12 +989,48 @@ func vline(screen tcell.Screen, x, y, l int) {
 // latestJobs returns a list of unique jobs favoring the last stage+name
 // version of a job in the provided list
 func latestJobs(jobs []*ViewJob) []*ViewJob {
-	var (
-		lastJob      = make(map[string]*ViewJob, len(jobs))
-		dupIdx       = -1
-		stages       = []string{}
-		jobAndStages = map[string][]*ViewJob{}
-	)
+	dupIdx, lastJob, jobAndStages := getJobStages(jobs)
+	// first duplicate marks where retries begin
+	outJobs := make([]*ViewJob, dupIdx)
+	var i int
+	for _, s := range jobAndStages.stages {
+		for _, j := range jobAndStages.jobs[s] {
+			outJobs[i] = lastJob[j.Stage+j.Name]
+			i++
+		}
+	}
+
+	return outJobs
+}
+
+type jobsAndStages struct {
+	stages []string
+	jobs   map[string][]*ViewJob
+}
+
+func (s *jobsAndStages) addStage(stage string) {
+	// add stage if it was not added, yet
+	if len(s.jobs[stage]) == 0 {
+		s.stages = append(s.stages, stage)
+	}
+}
+
+func (s *jobsAndStages) addJob(j *ViewJob) {
+	s.jobs[j.Stage] = append(s.jobs[j.Stage], j)
+}
+
+func newJobsAndStages() jobsAndStages {
+	return jobsAndStages{
+		stages: []string{},
+		jobs:   map[string][]*ViewJob{},
+	}
+}
+
+// getJobStages returns an index of first duplicated job, a map of jobs and list of stages and jobs grouped by stages
+func getJobStages(jobs []*ViewJob) (dupIdx int, lastJob map[string]*ViewJob, jobsByStages jobsAndStages) {
+	dupIdx = -1
+	lastJob = make(map[string]*ViewJob, len(jobs))
+	jobsByStages = newJobsAndStages()
 	for i, j := range jobs {
 		_, ok := lastJob[j.Stage+j.Name]
 		if dupIdx == -1 && ok {
@@ -939,25 +1038,14 @@ func latestJobs(jobs []*ViewJob) []*ViewJob {
 		}
 		// always want the latest job
 		lastJob[j.Stage+j.Name] = j
-		if len(jobAndStages[j.Stage]) == 0 {
-			stages = append(stages, j.Stage)
-		}
+		jobsByStages.addStage(j.Stage)
 		if dupIdx == -1 {
-			jobAndStages[j.Stage] = append(jobAndStages[j.Stage], j)
+			jobsByStages.addJob(j)
 		}
 	}
 	if dupIdx == -1 {
 		dupIdx = len(jobs)
 	}
-	// first duplicate marks where retries begin
-	outJobs := make([]*ViewJob, dupIdx)
-	var i int
-	for _, s := range stages {
-		for _, j := range jobAndStages[s] {
-			outJobs[i] = lastJob[j.Stage+j.Name]
-			i++
-		}
-	}
 
-	return outJobs
+	return
 }
