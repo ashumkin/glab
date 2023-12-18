@@ -432,115 +432,212 @@ func Test_LinkJobsNegative(t *testing.T) {
 }
 
 func Test_jobsView(t *testing.T) {
-	expected := []string{
-		"  ┌────────────────────┐      ┌────────────────────┐      ┌────────────────────┐        ",
-		"  │       Stage1       │      │       Stage2       │      │       Stage3       │        ",
-		"  └────────────────────┘      └────────────────────┘      └────────────────────┘        ",
-		"                                                                                        ",
-		"  ╔✔ stage1-job1-reall…╗      ┌───● stage2-job1────┐      ┌───■ stage3-job1────┐        ",
-		"  ║                    ║      │                    │      │                    │        ",
-		"  ║             01m 01s║═╦══╦═│                    │═╦══╦═│                    │        ",
-		"  ╚════════════════════╝ ║  ║ └────────────────────┘ ║  ║ └────────────────────┘        ",
-		"                         ║  ║                        ║  ║                               ",
-		"  ┌───✔ stage1-job2────┐ ║  ║ ┌───● stage2-job2────┐ ║  ║ ┌───■ stage3-job2────┐        ",
-		"  │                    │ ║  ║ │                    │ ║  ║ │                   »│        ",
-		"  │                    │═╝  ╠═│                    │═╝  ╚═│                    │        ",
-		"  └────────────────────┘ ║  ║ └────────────────────┘ ║    └────────────────────┘        ",
-		"                         ║  ║                        ║                                  ",
-		"  ┌───✔ stage1-job3────┐ ║  ║ ┌───● stage2-job3────┐ ║                                  ",
-		"  │                    │ ║  ║ │                    │ ║                                  ",
-		"  │                    │═╝  ╚═│                    │═╝                                  ",
-		"  └────────────────────┘ ║    └────────────────────┘                                    ",
-		"                         ║                                                              ",
-		"  ┌───✘ stage1-job4────┐ ║                                                              ",
-		"  │                    │ ║                                                              ",
-		"  │                    │═╝                                                              ",
-		"  └────────────────────┘                                                                ",
-		"                                                                                        ",
-		"                                                                                        ",
-		"                                                                                        ",
-	}
 	now := time.Now()
 	past := now.Add(time.Second * -61)
-	jobs := []*ViewJob{
+	tests := []struct {
+		name                    string
+		jobs                    []*ViewJob
+		titleFind, titleReplace string
+		expected                []string
+	}{
 		{
-			Name:       "stage1-job1-really-long",
-			Stage:      "stage1",
-			Status:     "success",
-			StartedAt:  &past, // relies on test running in <1s we'll see how it goes
-			FinishedAt: &now,
+			name: "no titler",
+			jobs: []*ViewJob{
+				{
+					Name:       "stage1-job1-really-long",
+					Stage:      "stage1",
+					Status:     "success",
+					StartedAt:  &past, // relies on test running in <1s we'll see how it goes
+					FinishedAt: &now,
+				},
+				{
+					Name:   "stage1-job2",
+					Stage:  "stage1",
+					Status: "success",
+				},
+				{
+					Name:   "stage1-job3",
+					Stage:  "stage1",
+					Status: "success",
+				},
+				{
+					Name:   "stage1-job4",
+					Stage:  "stage1",
+					Status: "failed",
+				},
+				{
+					Name:   "stage2-job1",
+					Stage:  "stage2",
+					Status: "running",
+				},
+				{
+					Name:   "stage2-job2",
+					Stage:  "stage2",
+					Status: "running",
+				},
+				{
+					Name:   "stage2-job3",
+					Stage:  "stage2",
+					Status: "pending",
+				},
+				{
+					Name:   "stage3-job1",
+					Stage:  "stage3",
+					Status: "manual",
+				},
+				{
+					Name:   "stage3-job2",
+					Stage:  "stage3",
+					Status: "manual",
+					Kind:   Bridge,
+				},
+			},
+			expected: []string{
+				"  ┌────────────────────┐      ┌────────────────────┐      ┌────────────────────┐        ",
+				"  │       Stage1       │      │       Stage2       │      │       Stage3       │        ",
+				"  └────────────────────┘      └────────────────────┘      └────────────────────┘        ",
+				"                                                                                        ",
+				"  ╔✔ stage1-job1-reall…╗      ┌───● stage2-job1────┐      ┌───■ stage3-job1────┐        ",
+				"  ║                    ║      │                    │      │                    │        ",
+				"  ║             01m 01s║═╦══╦═│                    │═╦══╦═│                    │        ",
+				"  ╚════════════════════╝ ║  ║ └────────────────────┘ ║  ║ └────────────────────┘        ",
+				"                         ║  ║                        ║  ║                               ",
+				"  ┌───✔ stage1-job2────┐ ║  ║ ┌───● stage2-job2────┐ ║  ║ ┌───■ stage3-job2────┐        ",
+				"  │                    │ ║  ║ │                    │ ║  ║ │                   »│        ",
+				"  │                    │═╝  ╠═│                    │═╝  ╚═│                    │        ",
+				"  └────────────────────┘ ║  ║ └────────────────────┘ ║    └────────────────────┘        ",
+				"                         ║  ║                        ║                                  ",
+				"  ┌───✔ stage1-job3────┐ ║  ║ ┌───● stage2-job3────┐ ║                                  ",
+				"  │                    │ ║  ║ │                    │ ║                                  ",
+				"  │                    │═╝  ╚═│                    │═╝                                  ",
+				"  └────────────────────┘ ║    └────────────────────┘                                    ",
+				"                         ║                                                              ",
+				"  ┌───✘ stage1-job4────┐ ║                                                              ",
+				"  │                    │ ║                                                              ",
+				"  │                    │═╝                                                              ",
+				"  └────────────────────┘                                                                ",
+				"                                                                                        ",
+				"                                                                                        ",
+				"                                                                                        ",
+			},
 		},
 		{
-			Name:   "stage1-job2",
-			Stage:  "stage1",
-			Status: "success",
-		},
-		{
-			Name:   "stage1-job3",
-			Stage:  "stage1",
-			Status: "success",
-		},
-		{
-			Name:   "stage1-job4",
-			Stage:  "stage1",
-			Status: "failed",
-		},
-		{
-			Name:   "stage2-job1",
-			Stage:  "stage2",
-			Status: "running",
-		},
-		{
-			Name:   "stage2-job2",
-			Stage:  "stage2",
-			Status: "running",
-		},
-		{
-			Name:   "stage2-job3",
-			Stage:  "stage2",
-			Status: "pending",
-		},
-		{
-			Name:   "stage3-job1",
-			Stage:  "stage3",
-			Status: "manual",
-		},
-		{
-			Name:   "stage3-job2",
-			Stage:  "stage3",
-			Status: "manual",
-			Kind:   Bridge,
+			name: "titler with replacements",
+			jobs: []*ViewJob{
+				{
+					Name:       "stage1-job1-really-long",
+					Stage:      "stage1",
+					Status:     "success",
+					StartedAt:  &past, // relies on test running in <1s we'll see how it goes
+					FinishedAt: &now,
+				},
+				{
+					Name:   "stage1-job2",
+					Stage:  "stage1",
+					Status: "success",
+				},
+				{
+					Name:   "stage1-job3",
+					Stage:  "stage1",
+					Status: "success",
+				},
+				{
+					Name:   "stage1-job4",
+					Stage:  "stage1",
+					Status: "failed",
+				},
+				{
+					Name:   "stage2-job1",
+					Stage:  "stage2",
+					Status: "running",
+				},
+				{
+					Name:   "stage2-job2",
+					Stage:  "stage2",
+					Status: "running",
+				},
+				{
+					Name:   "stage2-job3",
+					Stage:  "stage2",
+					Status: "pending",
+				},
+				{
+					Name:   "stage3-job1",
+					Stage:  "stage3",
+					Status: "manual",
+				},
+				{
+					Name:   "stage3-job2",
+					Stage:  "stage3",
+					Status: "manual",
+					Kind:   Bridge,
+				},
+			},
+			titleFind:    "stage(\\d+)-(job.+)",
+			titleReplace: "$2",
+			expected: []string{
+				"  ┌────────────────────┐      ┌────────────────────┐      ┌────────────────────┐        ",
+				"  │       Stage1       │      │       Stage2       │      │       Stage3       │        ",
+				"  └────────────────────┘      └────────────────────┘      └────────────────────┘        ",
+				"                                                                                        ",
+				"  ╔═✔ job1-really-long═╗      ┌───────● job1───────┐      ┌───────■ job1───────┐        ",
+				"  ║                    ║      │                    │      │                    │        ",
+				"  ║             01m 01s║═╦══╦═│                    │═╦══╦═│                    │        ",
+				"  ╚════════════════════╝ ║  ║ └────────────────────┘ ║  ║ └────────────────────┘        ",
+				"                         ║  ║                        ║  ║                               ",
+				"  ┌───────✔ job2───────┐ ║  ║ ┌───────● job2───────┐ ║  ║ ┌───────■ job2───────┐       ",
+				"  │                    │ ║  ║ │                    │ ║  ║ │                   »│        ",
+				"  │                    │═╝  ╠═│                    │═╝  ╚═│                    │        ",
+				"  └────────────────────┘ ║  ║ └────────────────────┘ ║    └────────────────────┘        ",
+				"                         ║  ║                        ║                                  ",
+				"  ┌───────✔ job3───────┐ ║  ║ ┌───────● job3───────┐ ║                                  ",
+				"  │                    │ ║  ║ │                    │ ║                                  ",
+				"  │                    │═╝  ╚═│                    │═╝                                  ",
+				"  └────────────────────┘ ║    └────────────────────┘                                    ",
+				"                         ║                                                              ",
+				"  ┌───────✘ job4───────┐ ║                                                              ",
+				"  │                    │ ║                                                              ",
+				"  │                    │═╝                                                              ",
+				"  └────────────────────┘                                                                ",
+				"                                                                                        ",
+				"                                                                                        ",
+				"                                                                                        ",
+			},
 		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 
-	boxes = make(map[string]*tview.TextView)
-	jobsCh := make(chan []*ViewJob)
-	inputCh := make(chan struct{})
-	root := tview.NewPages()
-	root.
-		SetBackgroundColor(tcell.ColorDefault).
-		SetBorderPadding(1, 1, 2, 2)
+			boxes = make(map[string]*tview.TextView)
+			jobsCh := make(chan []*ViewJob)
+			inputCh := make(chan struct{})
+			root := tview.NewPages()
+			root.
+				SetBackgroundColor(tcell.ColorDefault).
+				SetBorderPadding(1, 1, 2, 2)
 
-	screen := tcell.NewSimulationScreen("UTF-8")
-	err := screen.Init()
-	if err != nil {
-		t.Fatal(err)
+			screen := tcell.NewSimulationScreen("UTF-8")
+			err := screen.Init()
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Set screen to matrix size
+			screen.SetSize(len([]rune(tt.expected[0])), len(tt.expected))
+			w, h := screen.Size()
+			root.SetRect(0, 0, w, h)
+
+			go func() {
+				jobsCh <- tt.jobs
+			}()
+			root.Box.Focus(nil)
+			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", "", newTitler(tt.titleFind, tt.titleReplace))
+			root.Focus(func(p tview.Primitive) { p.Focus(nil) })
+			root.Draw(screen)
+			linkJobsView(nil)(screen)
+			screen.Sync()
+			assertScreen(t, screen, tt.expected)
+		})
 	}
-	// Set screen to matrix size
-	screen.SetSize(len([]rune(expected[0])), len(expected))
-	w, h := screen.Size()
-	root.SetRect(0, 0, w, h)
-
-	go func() {
-		jobsCh <- jobs
-	}()
-	root.Box.Focus(nil)
-	jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", "")
-	root.Focus(func(p tview.Primitive) { p.Focus(nil) })
-	root.Draw(screen)
-	linkJobsView(nil)(screen)
-	screen.Sync()
-	assertScreen(t, screen, expected)
 }
 
 func Test_latestJobs(t *testing.T) {
