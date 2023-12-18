@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -31,6 +32,25 @@ import (
 	"golang.org/x/text/language"
 )
 
+type titler struct {
+	re      *regexp.Regexp
+	replace string
+}
+
+func newTitler(find, replace string) *titler {
+	if find == "" {
+		find = ".+"
+	}
+	if replace == "" {
+		replace = "\\0"
+	}
+	return &titler{re: regexp.MustCompile(find), replace: replace}
+}
+
+func (t titler) getJobTitle(jobName string) string {
+	return t.re.ReplaceAllString(jobName, t.replace)
+}
+
 type ViewOpts struct {
 	RefName string
 
@@ -43,6 +63,7 @@ type ViewOpts struct {
 	OpenInBrowser bool
 	User          *gitlab.BasicUser
 	forMR         bool
+	titler        *titler
 }
 
 type ViewJobKind int64
@@ -102,7 +123,10 @@ func ViewJobFromJob(job *gitlab.Job) *ViewJob {
 }
 
 func NewCmdView(f *cmdutils.Factory) *cobra.Command {
-	opts := ViewOpts{}
+	config, _ := f.Config()
+	ff, _ := config.Get("", "ci.view.title.match")
+	r, _ := config.Get("", "ci.view.title.replace")
+	opts := ViewOpts{titler: newTitler(ff, r)}
 	pipelineCIView := &cobra.Command{
 		Use:   "view [branch/tag]",
 		Short: "View, run, trace/logs, and cancel CI/CD jobs current pipeline",
@@ -784,7 +808,6 @@ func jobsView(
 		boxKeys[key] = true
 		x, y, w, h := boxX, maxY/6+(rowIdx*5), maxTitle+2, 4
 		b := box(root, key, x, y, w, h)
-		b.SetTitle(j.Name)
 		// The scope of jobs to show, one or array of: created, pending, running,
 		// failed, success, canceled, skipped; showing all jobs if none provided
 		var statChar rune
@@ -815,7 +838,7 @@ func jobsView(
 			statChar = '»'
 		}
 		// retryChar := '⟳'
-		title := fmt.Sprintf("%c %s", statChar, j.Name)
+		title := fmt.Sprintf("%c %s", statChar, opts.titler.getJobTitle(j.Name))
 		// trim the suffix if it matches the stage, I've seen
 		// the pattern in 2 different places to handle
 		// different stages for the same service and it tends
