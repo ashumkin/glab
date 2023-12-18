@@ -709,6 +709,8 @@ func jobsView(
 		logsKey := "logs-" + curJob.Name
 		if !root.SwitchToPage(logsKey).HasPage(logsKey) {
 			tv := tview.NewTextView()
+			tv.SetTitle(" " + curJob.Name + " ")
+			tv.SetTitleAlign(tview.AlignLeft)
 			tv.SetDynamicColors(true)
 			tv.SetBorderPadding(0, 0, 1, 1).SetBorder(true)
 
