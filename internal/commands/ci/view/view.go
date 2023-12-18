@@ -167,6 +167,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		  navigate the modal, and %[1]sEnter%[1]s to confirm.
 		- %[1]sCtrl+D%[1]s to cancel a job. If the selected job isn't running or pending,
 		  quits the CI/CD view.
+		- %[1]sCtrl+L%[1]s to redraw the screen.
 		- %[1]sCtrl+Q%[1]s to quit the CI/CD view.
 		- %[1]sCtrl+Space%[1]s to suspend application and view the logs. Similar to %[1]sglab pipeline ci trace%[1]s.
 		- Supports %[1]svi%[1]s style bindings and arrow keys for navigating jobs and logs.
@@ -462,6 +463,12 @@ func inputCapture(
 				app.ForceDraw()
 				return nil
 			}
+		case tcell.KeyCtrlL:
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			app.Sync()
+			return nil
 		case tcell.KeyCtrlP, tcell.KeyCtrlR:
 			if appSt.modalVisible || appSt.curJob.Kind != Job {
 				break
