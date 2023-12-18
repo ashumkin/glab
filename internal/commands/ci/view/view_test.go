@@ -547,7 +547,7 @@ func Test_jobsView(t *testing.T) {
 		jobsCh <- jobs
 	}()
 	root.Box.Focus(nil)
-	jobsView(nil, jobsCh, inputCh, root, nil, "", "")
+	jobsView(nil, jobsCh, inputCh, root, nil, "", "", newTitler("", ""))
 	root.Focus(func(p tview.Primitive) { p.Focus(nil) })
 	root.Draw(screen)
 	linkJobsView(nil)(screen)

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -35,15 +36,34 @@ import (
 )
 
 type options struct {
-	io         *iostreams.IOStreams
-	factory    cmdutils.Factory
-	httpClient func() (*gitlab.Client, error)
-	baseRepo   func() (glrepo.Interface, error)
-	config     func() config.Config
-
+	io            *iostreams.IOStreams
+	factory       cmdutils.Factory
+	httpClient    func() (*gitlab.Client, error)
+	baseRepo      func() (glrepo.Interface, error)
+	config        func() config.Config
 	refName       string
 	openInBrowser bool
 	forMR         bool
+	titler        *titler
+}
+
+type titler struct {
+	re      *regexp.Regexp
+	replace string
+}
+
+func newTitler(find, replace string) *titler {
+	if find == "" {
+		find = ".+"
+	}
+	if replace == "" {
+		replace = "\\0"
+	}
+	return &titler{re: regexp.MustCompile(find), replace: replace}
+}
+
+func (t titler) getJobTitle(jobName string) string {
+	return t.re.ReplaceAllString(jobName, t.replace)
 }
 
 type ViewJobKind int64
@@ -103,12 +123,16 @@ func ViewJobFromJob(job *gitlab.Job) *ViewJob {
 }
 
 func NewCmdView(f cmdutils.Factory) *cobra.Command {
+	cfg := f.Config()
+	ff, _ := cfg.Get("", "ci.view.title.match")
+	r, _ := cfg.Get("", "ci.view.title.replace")
 	opts := options{
 		factory:    f, // quick fix
 		io:         f.IO(),
 		httpClient: f.HttpClient,
 		baseRepo:   f.BaseRepo,
 		config:     f.Config,
+		titler:     newTitler(ff, r),
 	}
 	pipelineCIView := &cobra.Command{
 		Use:   "view [branch/tag]",
@@ -281,7 +305,7 @@ func (o *options) run(args []string) error {
 		defer recoverPanic(app)
 		for {
 			app.SetFocus(root)
-			jobsView(app, jobsCh, inputCh, root, apiClient, projectID, commitSHA)
+			jobsView(app, jobsCh, inputCh, root, apiClient, projectID, commitSHA, o.titler)
 			app.Draw()
 		}
 	}()
@@ -724,6 +748,7 @@ func jobsView(
 	apiClient *gitlab.Client,
 	projectID string,
 	commitSHA string,
+	titler *titler,
 ) {
 	select {
 	case jobs = <-jobsCh:
@@ -821,7 +846,6 @@ func jobsView(
 		boxKeys[key] = true
 		x, y, w, h := boxX, maxY/6+(rowIdx*5), maxTitle+2, 4
 		b := box(root, key, x, y, w, h)
-		b.SetTitle(j.Name)
 		// The scope of jobs to show, one or array of: created, pending, running,
 		// failed, success, canceled, skipped; showing all jobs if none provided
 		var statChar rune
@@ -852,7 +876,7 @@ func jobsView(
 			statChar = '»'
 		}
 		// retryChar := '⟳'
-		title := fmt.Sprintf("%c %s", statChar, j.Name)
+		title := fmt.Sprintf("%c %s", statChar, titler.getJobTitle(j.Name))
 		// trim the suffix if it matches the stage, I've seen
 		// the pattern in 2 different places to handle
 		// different stages for the same service and it tends
