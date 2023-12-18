@@ -23,11 +23,16 @@ Use arrow keys to navigate jobs and logs.
 - `Esc` or `q` to close the logs or trace, or return to the parent pipeline.
 - `Ctrl+R`, `Ctrl+P` to run, retry, or play a job. Use `Tab` or arrow keys to
   navigate the modal, and `Enter` to confirm.
-- `Ctrl+D` to cancel a job. If the selected job isn't running or pending,
+- `Ctrl+D` to cancel a job / selected jobs. If the selected job(s) isn't/aren't running or pending,
   quits the CI/CD view.
 - `Ctrl+L` to redraw the screen.
 - `Ctrl+Q` to quit the CI/CD view.
 - `Ctrl+Space` to suspend application and view the logs. Similar to `glab ci trace`.
+- `Space` to select job.
+- `Ctrl+E` to select manual jobs in the stage of current selected job
+- `Ctrl+A` to select manual jobs in the stage of current selected job and after
+- `Ctrl+Backspace` to deselect all jobs.
+- `s` to run (start) selected jobs.
 - Supports `vi` style bindings and arrow keys for navigating jobs and logs.
 
 ```plaintext
