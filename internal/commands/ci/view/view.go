@@ -787,7 +787,9 @@ func jobsView(
 				SetDynamicColors(true).
 				SetBackgroundColor(tcell.ColorDefault).
 				SetBorderPadding(0, 0, 1, 1).
-				SetBorder(true)
+				SetBorder(true).
+				SetTitle(" " + curJob.Name + " ").
+				SetTitleAlign(tview.AlignLeft)
 
 			// curJob moves as the user navigates, so snapshot it before the
 			// goroutine reads it.
