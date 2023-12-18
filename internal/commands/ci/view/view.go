@@ -22,6 +22,7 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/rivo/tview"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
@@ -96,6 +97,10 @@ type ViewJob struct {
 	OriginalBridge *gitlab.Bridge
 }
 
+func (j ViewJob) surrogateID() string {
+	return j.Stage + "-" + j.Name
+}
+
 func ViewJobFromBridge(bridge *gitlab.Bridge) *ViewJob {
 	vj := &ViewJob{}
 	vj.ID = bridge.ID
@@ -150,12 +155,17 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		- %[1]sEsc%[1]s or %[1]sq%[1]s to close the logs or trace, or return to the parent pipeline.
 		- %[1]sCtrl+R%[1]s, %[1]sCtrl+P%[1]s to run, retry, or play a job. Use %[1]sTab%[1]s, arrow keys, or
 		  %[1]sh%[1]s/%[1]sj%[1]s/%[1]sk%[1]s/%[1]sl%[1]s to navigate the modal, and %[1]sEnter%[1]s to confirm.
-		- %[1]sCtrl+D%[1]s to cancel a job. If the selected job isn't running or pending,
+		- %[1]sCtrl+D%[1]s to cancel selected jobs or the focused job. If none can be canceled,
 		  quits the CI/CD view.
 		- %[1]sCtrl+S%[1]s to show the full name of the selected job.
 		- %[1]sCtrl+L%[1]s to redraw the screen.
 		- %[1]sCtrl+Q%[1]s to quit the CI/CD view.
 		- %[1]sCtrl+Space%[1]s to suspend application and view the logs. Similar to %[1]sglab ci trace%[1]s.
+		- %[1]sSpace%[1]s to select job.
+		- %[1]sCtrl+E%[1]s to select manual jobs in the stage of current selected job
+		- %[1]sCtrl+A%[1]s to select manual jobs in the stage of current selected job and after
+		- %[1]sCtrl+Backspace%[1]s to deselect all jobs.
+		- %[1]ss%[1]s to run (start) selected jobs.
 		- Supports %[1]svi%[1]s style bindings and arrow keys for navigating jobs and logs.
 
 		Job names too long for their box scroll while the job is selected.
@@ -544,20 +554,99 @@ func inputCapture(
 		}
 		event = normalizeViKeys(event)
 		if !appSt.modalVisible && !appSt.logsVisible && len(appSt.jobs) > 0 {
+			if event.Rune() == ' ' {
+				appSt.toggleSelected()
+				inputCh <- struct{}{}
+				app.ForceDraw()
+				return nil
+			}
 			appSt.curJob = navi.Navigate(appSt.jobs, event)
 			root.SendToFront("jobs-" + appSt.curJob.Name)
 		}
 		event = normalizeCtrlM(event)
+		switch {
+		case event.Key() == tcell.KeyRune && event.Rune() == 's':
+			if appSt.modalVisible || appSt.curJob == nil || appSt.curJob.Kind != Job {
+				break
+			}
+			jobsToRun, jobToRunNames := appSt.selectedJobs(nil)
+			if len(jobsToRun) > 0 {
+				appSt.modalVisible = true
+				modal := tview.NewModal()
+				modal.
+					SetBorderStyle(tcell.StyleDefault).
+					SetTitleColor(tcell.ColorDefault).
+					SetBorderColor(tcell.ColorDefault)
+				modal.SetText(fmt.Sprintf("Are you sure you want to run %s:\n%s\n?",
+					"all selected jobs", strings.Join(jobToRunNames, "\n"))).
+					AddButtons([]string{"✘ No", "✔ Yes"}).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						appSt.modalVisible = false
+						root.RemovePage("yesno")
+						if buttonLabel != "✔ Yes" {
+							app.ForceDraw()
+							return
+						}
+						for _, j := range jobsToRun {
+							root.RemovePage(logsPageKey(j))
+						}
+						app.ForceDraw()
+
+						job, err := doWithSelectedJobs(appSt, jobsToRun, func(jobID int64, jobStatus string) (*gitlab.Job, error) {
+							return api.PlayOrRetryJobs(apiClient, curProjectID(app, *pipelines), jobID, jobStatus)
+						})
+						if err != nil {
+							app.Stop()
+							log.Fatal(err)
+						}
+						if job != nil {
+							appSt.curJob = ViewJobFromJob(job)
+							app.ForceDraw()
+						}
+					})
+				root.AddAndSwitchToPage("yesno", modal, false)
+				inputCh <- struct{}{}
+				app.ForceDraw()
+
+				return nil
+			}
+			appSt.modalVisible = true
+			modal := tview.NewModal().
+				SetText("There are no selected jobs to run").
+				AddButtons([]string{"✔ OK"}).
+				SetBackgroundColor(tcell.ColorOrangeRed).
+				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+					appSt.modalVisible = false
+					root.RemovePage("yesno")
+					app.ForceDraw()
+				})
+			root.AddAndSwitchToPage("yesno", modal, false)
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		}
 		switch event.Key() {
 		case tcell.KeyCtrlQ:
 			app.Stop()
 			return nil
 		case tcell.KeyCtrlD:
-			if appSt.curJob.Kind == Job && (appSt.curJob.Status == string(gitlab.Created) || appSt.curJob.Status == string(gitlab.Pending) || appSt.curJob.Status == string(gitlab.Running)) {
+			cancelableJob := func(job *ViewJob) bool {
+				return job.Kind == Job && (job.Status == string(gitlab.Created) || job.Status == string(gitlab.Pending) || job.Status == string(gitlab.Running))
+			}
+			jobsToRun, jobToRunNames := appSt.selectedJobs(cancelableJob)
+			if len(jobsToRun) == 0 && cancelableJob(appSt.curJob) {
+				jobsToRun = append(jobsToRun, appSt.curJob)
+				jobToRunNames = append(jobToRunNames, appSt.curJob.Name)
+			}
+			if len(jobsToRun) > 0 {
 				appSt.modalVisible = true
-				modal := tview.NewModal().
-					SetBackgroundColor(tcell.ColorDefault).
-					SetText(tview.Escape(fmt.Sprintf("Are you sure you want to cancel %s?", appSt.curJob.Name))).
+				modal := tview.NewModal()
+				modal.
+					SetBorderStyle(tcell.StyleDefault).
+					SetTitleColor(tcell.ColorDefault).
+					SetBorderColor(tcell.ColorDefault)
+				modal.SetText(tview.Escape(fmt.Sprintf("Are you sure you want to cancel %s:\n%s\n?",
+					"all selected jobs", strings.Join(jobToRunNames, "\n")))).
 					AddButtons([]string{"✘ No", "✔ Yes"}).
 					SetButtonActivatedStyle(buttonActivatedStyle).
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
@@ -569,7 +658,11 @@ func inputCapture(
 						}
 						root.RemovePage(appSt.logsPage())
 						app.ForceDraw()
-						job, _, err := apiClient.Jobs.CancelJob(curProjectID(app, *pipelines), appSt.curJob.ID)
+						job, err := doWithSelectedJobs(appSt, jobsToRun, func(jobID int64, _ string) (*gitlab.Job, error) {
+							job, _, err := apiClient.Jobs.CancelJob(curProjectID(app, *pipelines), jobID)
+
+							return job, err
+						})
 						if err != nil {
 							app.Stop()
 							log.Fatal(err)
@@ -595,10 +688,15 @@ func inputCapture(
 				break
 			}
 			appSt.modalVisible = true
+			modal := tview.NewModal()
+			modal.
+				SetBorderStyle(tcell.StyleDefault).
+				SetTitleColor(tcell.ColorDefault).
+				SetBorderColor(tcell.ColorDefault)
 			if appSt.curJob.Status == string(gitlab.Created) {
-				modal := tview.NewModal().
-					SetText(fmt.Sprintf("The job %s is not retriable", appSt.curJob.Name)).
+				modal.SetText(fmt.Sprintf("The job %s is not retriable", appSt.curJob.Name)).
 					AddButtons([]string{"OK"}).
+					SetBackgroundColor(tcell.ColorOrangeRed).
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 						appSt.modalVisible = false
 						root.RemovePage("ok")
@@ -606,9 +704,7 @@ func inputCapture(
 					})
 				root.AddAndSwitchToPage("ok", modal, false)
 			} else {
-				modal := tview.NewModal().
-					SetBackgroundColor(tcell.ColorDefault).
-					SetText(tview.Escape(fmt.Sprintf("Are you sure you want to run %s?", appSt.curJob.Name))).
+				modal.SetText(tview.Escape(fmt.Sprintf("Are you sure you want to run %s?", appSt.curJob.Name))).
 					AddButtons([]string{"✘ No", "✔ Yes"}).
 					SetButtonActivatedStyle(buttonActivatedStyle).
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
@@ -647,6 +743,43 @@ func inputCapture(
 			}
 			showJobName(app, root, appSt)
 			inputCh <- struct{}{}
+			return nil
+		case tcell.KeyCtrlA:
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			appSt.selectManualJobs()
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case tcell.KeyBackspace:
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			appSt.deselectAll()
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case tcell.KeyCtrlE:
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			c := appSt.selectManualOrCanceledJobs()
+			if c == 0 {
+				appSt.modalVisible = true
+				modal := tview.NewModal().
+					SetText(fmt.Sprintf("There are no runnable jobs in the stage '%s'", appSt.curJob.Stage)).
+					AddButtons([]string{"✔ OK"}).
+					SetBackgroundColor(tcell.ColorOrangeRed).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						appSt.modalVisible = false
+						root.RemovePage("ok")
+						app.ForceDraw()
+					})
+				root.AddAndSwitchToPage("ok", modal, false)
+			}
+			inputCh <- struct{}{}
+			app.ForceDraw()
 			return nil
 		case tcell.KeyEnter:
 			if !appSt.modalVisible {
@@ -768,16 +901,44 @@ func normalizeViKeys(event *tcell.EventKey) *tcell.EventKey {
 	return event
 }
 
+func doWithSelectedJobs(appSt *appState, jobsToRun []*ViewJob, do func(int64, string) (*gitlab.Job, error)) (*gitlab.Job, error) {
+	jobs := make(chan *gitlab.Job, len(jobsToRun))
+	g := errgroup.Group{}
+	for _, j := range jobsToRun {
+		g.Go(func() error {
+			job, err := do(j.ID, j.Status)
+			if err == nil {
+				if appSt.curJob.ID == j.ID {
+					jobs <- job
+				}
+			}
+
+			return err
+		})
+	}
+	err := g.Wait()
+	if err != nil {
+		return nil, err
+	}
+	appSt.deselectAll()
+	close(jobs)
+
+	job := <-jobs
+
+	return job, nil
+}
+
 type appState struct {
 	logsVisible, modalVisible bool
 	curJob                    *ViewJob
 	jobs                      []*ViewJob
 	boxes                     map[string]*tview.TextView
+	selected                  map[string]*ViewJob
 	titleScroll               titleScroller
 }
 
 func newAppState() *appState {
-	return &appState{boxes: make(map[string]*tview.TextView)}
+	return &appState{boxes: make(map[string]*tview.TextView), selected: make(map[string]*ViewJob)}
 }
 
 func (s appState) logsPage() string {
@@ -861,6 +1022,80 @@ func (s *titleScroller) scroll(name string, width int) string {
 		s.pause = 0
 	}
 	return visible
+}
+
+func (s *appState) selectJob(job *ViewJob) {
+	s.selected[job.surrogateID()] = job
+}
+
+func (s *appState) isSelected(j *ViewJob) bool {
+	_, ok := s.selected[j.surrogateID()]
+
+	return ok
+}
+
+func (s *appState) toggleSelected() {
+	if s.isSelected(s.curJob) {
+		delete(s.selected, s.curJob.surrogateID())
+
+		return
+	}
+	s.selectJob(s.curJob)
+}
+
+func (s appState) isAnySelected() bool {
+	return len(s.selected) > 0
+}
+
+func (s *appState) deselectAll() {
+	s.selected = make(map[string]*ViewJob)
+}
+
+func (s appState) selectedJobs(filter func(*ViewJob) bool) ([]*ViewJob, []string) {
+	var jobs []*ViewJob
+	var jobNames []string
+	for _, j := range s.selected {
+		if filter != nil && !filter(j) {
+			continue
+		}
+		jobs = append(jobs, j)
+		jobNames = append(jobNames, j.Name)
+	}
+
+	return jobs, jobNames
+}
+
+func (s *appState) selectManualJobs() {
+	s.selectJobWithPredicat(func(job *ViewJob, curJob *ViewJob) bool {
+		return job.Status == string(gitlab.Manual)
+	})
+}
+
+func (s *appState) selectManualOrCanceledJobs() int {
+	return s.selectJobWithPredicat(func(job *ViewJob, curJob *ViewJob) bool {
+		return job.Stage == s.curJob.Stage && (job.Status == string(gitlab.Manual) || job.Status == string(gitlab.Canceled))
+	})
+}
+
+func (s *appState) selectJobWithPredicat(predicat func(*ViewJob, *ViewJob) bool) int {
+	_, _, jobAndStages := getJobStages(s.jobs)
+	includeStages := make(map[string]struct{})
+	for _, st := range jobAndStages.stages {
+		if len(includeStages) > 0 || s.curJob.Stage == st {
+			includeStages[st] = struct{}{}
+		}
+	}
+	var c int
+	for st := range includeStages {
+		for _, j := range jobAndStages.jobs[st] {
+			if predicat(j, s.curJob) {
+				s.selectJob(j)
+				c++
+			}
+		}
+	}
+
+	return c
 }
 
 // bracketEscaper wraps a writer and escapes square brackets for tview, but preserves ANSI escape sequences.
@@ -1190,7 +1425,11 @@ func jobsView(
 		// Measure the escaped title, which is what tview draws: it reads an
 		// unescaped "[step]" in a name as a colour tag and counts it as no
 		// columns at all, so a name that overflows can pass for one that fits.
-		title := tview.Escape(fmt.Sprintf("%c %s", statChar, name))
+		marker := ""
+		if appSt.isSelected(j) {
+			marker = "*"
+		}
+		title := tview.Escape(fmt.Sprintf("%c %s%s", statChar, marker, name))
 		if tview.TaggedStringWidth(title) > titler.maxLen {
 			// tview default aligns center, which is nice, but if
 			// the title is too long we want to bias towards seeing
@@ -1199,7 +1438,7 @@ func jobsView(
 			// The selected job scrolls its name so the whole of it can be
 			// read. Every other box shows the name from the start again.
 			if j.Name == appSt.curJob.Name {
-				title = tview.Escape(fmt.Sprintf("%c %s", statChar, appSt.titleScroll.scroll(name, titler.maxLen-statusWidth)))
+				title = tview.Escape(fmt.Sprintf("%c %s%s", statChar, marker, appSt.titleScroll.scroll(name, titler.maxLen-statusWidth-len(marker))))
 			}
 		}
 		b.SetTitle(title)
@@ -1425,12 +1664,48 @@ func vline(screen tcell.Screen, x, y, l int) {
 // latestJobs returns a list of unique jobs favoring the last stage+name
 // version of a job in the provided list
 func latestJobs(jobs []*ViewJob) []*ViewJob {
-	var (
-		lastJob      = make(map[string]*ViewJob, len(jobs))
-		dupIdx       = -1
-		stages       = []string{}
-		jobAndStages = map[string][]*ViewJob{}
-	)
+	dupIdx, lastJob, jobAndStages := getJobStages(jobs)
+	// first duplicate marks where retries begin
+	outJobs := make([]*ViewJob, dupIdx)
+	var i int
+	for _, s := range jobAndStages.stages {
+		for _, j := range jobAndStages.jobs[s] {
+			outJobs[i] = lastJob[j.Stage+j.Name]
+			i++
+		}
+	}
+
+	return outJobs
+}
+
+type jobsAndStages struct {
+	stages []string
+	jobs   map[string][]*ViewJob
+}
+
+func (s *jobsAndStages) addStage(stage string) {
+	// add stage if it was not added, yet
+	if len(s.jobs[stage]) == 0 {
+		s.stages = append(s.stages, stage)
+	}
+}
+
+func (s *jobsAndStages) addJob(j *ViewJob) {
+	s.jobs[j.Stage] = append(s.jobs[j.Stage], j)
+}
+
+func newJobsAndStages() jobsAndStages {
+	return jobsAndStages{
+		stages: []string{},
+		jobs:   map[string][]*ViewJob{},
+	}
+}
+
+// getJobStages returns an index of first duplicated job, a map of jobs and list of stages and jobs grouped by stages
+func getJobStages(jobs []*ViewJob) (dupIdx int, lastJob map[string]*ViewJob, jobsByStages jobsAndStages) {
+	dupIdx = -1
+	lastJob = make(map[string]*ViewJob, len(jobs))
+	jobsByStages = newJobsAndStages()
 	for i, j := range jobs {
 		_, ok := lastJob[j.Stage+j.Name]
 		if dupIdx == -1 && ok {
@@ -1438,25 +1713,14 @@ func latestJobs(jobs []*ViewJob) []*ViewJob {
 		}
 		// always want the latest job
 		lastJob[j.Stage+j.Name] = j
-		if len(jobAndStages[j.Stage]) == 0 {
-			stages = append(stages, j.Stage)
-		}
+		jobsByStages.addStage(j.Stage)
 		if dupIdx == -1 {
-			jobAndStages[j.Stage] = append(jobAndStages[j.Stage], j)
+			jobsByStages.addJob(j)
 		}
 	}
 	if dupIdx == -1 {
 		dupIdx = len(jobs)
 	}
-	// first duplicate marks where retries begin
-	outJobs := make([]*ViewJob, dupIdx)
-	var i int
-	for _, s := range stages {
-		for _, j := range jobAndStages[s] {
-			outJobs[i] = lastJob[j.Stage+j.Name]
-			i++
-		}
-	}
 
-	return outJobs
+	return
 }
