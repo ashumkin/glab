@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -38,16 +39,34 @@ import (
 )
 
 type options struct {
-	io           *iostreams.IOStreams
-	factory      cmdutils.Factory
-	gitlabClient func() (*gitlab.Client, error)
-	baseRepo     func() (glrepo.Interface, error)
-	config       func() config.Config
-
+	io            *iostreams.IOStreams
+	factory       cmdutils.Factory
+	gitlabClient  func() (*gitlab.Client, error)
+	baseRepo      func() (glrepo.Interface, error)
+	config        func() config.Config
 	refName       string
 	openInBrowser bool
 	pipelineID    int64
 	forMR         bool
+}
+
+type titler struct {
+	re      *regexp.Regexp
+	replace string
+}
+
+func newTitler(find, replace string) *titler {
+	if find == "" {
+		find = ".+"
+	}
+	if replace == "" {
+		replace = "$0"
+	}
+	return &titler{re: regexp.MustCompile(find), replace: replace}
+}
+
+func (t titler) getJobTitle(jobName string) string {
+	return t.re.ReplaceAllString(jobName, t.replace)
 }
 
 type ViewJobKind int64
@@ -297,11 +316,15 @@ func (o *options) run(ctx context.Context, args []string) error {
 	var navi navigator
 	app.SetInputCapture(inputCapture(ctx, app, root, &navi, inputCh, forceUpdateCh, o, client))
 	go updateJobs(app, jobsCh, forceUpdateCh, client)
+	cfg := o.config()
+	ff, _ := cfg.Get("", "ci.view.title.match")
+	r, _ := cfg.Get("", "ci.view.title.replace")
+	titlr := newTitler(ff, r)
 	go func() {
 		defer recoverPanic(app)
 		for {
 			app.SetFocus(root)
-			jobsView(ctx, app, jobsCh, inputCh, root, client)
+			jobsView(ctx, app, jobsCh, inputCh, root, client, projectID, pipeline.SHA, titlr)
 			app.Draw()
 		}
 	}()
@@ -917,6 +940,9 @@ func jobsView(
 	inputCh <-chan struct{},
 	root *tview.Pages,
 	apiClient *gitlab.Client,
+	projectID string,
+	commitSHA string,
+	titler *titler,
 ) {
 	select {
 	case jobs = <-jobsCh:
@@ -1041,7 +1067,7 @@ func jobsView(
 		if borderColor != tcell.ColorDefault {
 			b.SetBorderColor(borderColor)
 		}
-		name := jobName(j)
+		name := strings.TrimSuffix(titler.getJobTitle(j.Name), ":"+j.Stage)
 		// Measure the escaped title, which is what tview draws: it reads an
 		// unescaped "[step]" in a name as a colour tag and counts it as no
 		// columns at all, so a name that overflows can pass for one that fits.
