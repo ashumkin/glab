@@ -332,7 +332,7 @@ func inputCapture(
 			app.Stop()
 			return nil
 		case tcell.KeyCtrlD:
-			if curJob.Kind == Job && (curJob.Status == "pending" || curJob.Status == "running") {
+			if curJob.Kind == Job && (curJob.Status == "created" || curJob.Status == "pending" || curJob.Status == "running") {
 				modalVisible = true
 				modal := tview.NewModal().
 					SetText(fmt.Sprintf("Are you sure you want to Cancel %s", curJob.Name)).
