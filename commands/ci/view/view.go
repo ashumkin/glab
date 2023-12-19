@@ -113,6 +113,7 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 		'Enter' to toggle a job's logs or trace or display a child pipeline (trigger jobs are marked with a »).
 		'Esc' or 'q' to close logs,trace or go back to the parent pipeline.
 		'Ctrl+R', 'Ctrl+P' to run/retry/play a job -- Use Tab / Arrow keys to navigate modal and Enter to confirm.
+		'Ctrl+E' to run/retry/play manual jobs in the stage of current selected job
 		'Ctrl+A' to run/retry/play manual jobs in the stage of current selected job and after
 		'Ctrl+D' to cancel job -- (Quits CI/CD view if selected job isn't running or pending).
 		'Ctrl+Q' to Quit CI/CD View.
@@ -417,6 +418,59 @@ func inputCapture(
 			modal := tview.NewModal().
 				SetText(
 					fmt.Sprintf("Are you sure you want to all manual jobs in stage %s and later:\n%s\n?",
+						curJob.Stage, strings.Join(manualJobNames, "\n"))).
+				AddButtons([]string{"✘ No", "✔ Yes"}).
+				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+					modalVisible = false
+					root.RemovePage("yesno")
+					if buttonLabel != "✔ Yes" {
+						app.ForceDraw()
+						return
+					}
+					for _, j := range manualJobs {
+						root.RemovePage("logs-" + j.Name)
+					}
+					app.ForceDraw()
+
+					var job *gitlab.Job
+					for _, j := range manualJobs {
+						var err error
+						job, err = api.PlayOrRetryJobs(
+							opts.ApiClient,
+							opts.ProjectID,
+							j.ID,
+							j.Status,
+						)
+						if err != nil {
+							app.Stop()
+							log.Fatal(err)
+						}
+					}
+					if job != nil {
+						curJob = ViewJobFromJob(job)
+						app.ForceDraw()
+					}
+				})
+			root.AddAndSwitchToPage("yesno", modal, false)
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case tcell.KeyCtrlE:
+			if modalVisible || curJob.Kind != Job {
+				break
+			}
+			modalVisible = true
+			var manualJobs []*ViewJob
+			var manualJobNames []string
+			for _, j := range jobs {
+				if j.Status == "manual" && j.Stage == curJob.Stage {
+					manualJobs = append(manualJobs, j)
+					manualJobNames = append(manualJobNames, j.Name)
+				}
+			}
+			modal := tview.NewModal().
+				SetText(
+					fmt.Sprintf("Are you sure you want to all manual jobs in stage %s:\n%s\n?",
 						curJob.Stage, strings.Join(manualJobNames, "\n"))).
 				AddButtons([]string{"✘ No", "✔ Yes"}).
 				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
