@@ -424,7 +424,7 @@ func inputCapture(
 			app.Stop()
 			return nil
 		case tcell.KeyCtrlD:
-			if curJob.Kind == Job && (curJob.Status == string(gitlab.Pending) || curJob.Status == string(gitlab.Running)) {
+			if curJob.Kind == Job && (curJob.Status == string(gitlab.Created) || curJob.Status == string(gitlab.Pending) || curJob.Status == string(gitlab.Running)) {
 				modalVisible = true
 				modal := tview.NewModal().
 					SetBackgroundColor(tcell.ColorDefault).
