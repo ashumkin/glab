@@ -340,7 +340,7 @@ func inputCapture(
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 						modalVisible = false
 						root.RemovePage("yesno")
-						if buttonLabel == "✘ No" {
+						if buttonLabel != "✔ Yes" {
 							app.ForceDraw()
 							return
 						}
