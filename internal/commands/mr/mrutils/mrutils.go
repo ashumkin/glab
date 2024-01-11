@@ -117,6 +117,9 @@ func DisplayMR(c *iostreams.ColorPalette, mr *gitlab.BasicMergeRequest, isTTY bo
 func MRState(c *iostreams.ColorPalette, m *gitlab.BasicMergeRequest) string {
 	switch m.State {
 	case "opened":
+		if m.Draft {
+			return c.Yellow(fmt.Sprintf("!%d", m.IID))
+		}
 		return c.Green(fmt.Sprintf("!%d", m.IID))
 	case "merged":
 		return c.Magenta(fmt.Sprintf("!%d", m.IID))
