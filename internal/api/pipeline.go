@@ -27,8 +27,8 @@ func PlayOrRetryJobs(client *gitlab.Client, repo string, jobID int64, status str
 	}
 }
 
-func PipelineJobWithSha(client *gitlab.Client, pid any, sha, name string) (*gitlab.Job, error) {
-	jobs, _, err := pipelineJobsWithSha(client, pid, sha)
+var PipelineJob = func(client *gitlab.Client, projectID string, pipelineID int64, name string) (*gitlab.Job, error) {
+	jobs, _, err := PipelineJobsWithID(client, projectID, pipelineID)
 	if len(jobs) == 0 || err != nil {
 		return nil, err
 	}
