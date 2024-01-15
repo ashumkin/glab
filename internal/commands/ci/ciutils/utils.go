@@ -180,15 +180,15 @@ func DisplayMultiplePipelines(s *iostreams.IOStreams, p []*gitlab.PipelineInfo, 
 	return table.Render()
 }
 
-func RunTraceSha(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid any, sha, name string) error {
-	job, err := api.PipelineJobWithSha(apiClient, pid, sha, name)
+func RunTraceForPipelineJob(ctx context.Context, apiClient *gitlab.Client, w io.Writer, projectID string, pipelineID int64, name string) error {
+	job, err := api.PipelineJob(apiClient, projectID, pipelineID, name)
 	if err != nil {
 		return fmt.Errorf("failed to find job: %w", err)
 	}
 	if job == nil {
 		return fmt.Errorf("failed to find job: no matching job named %q for this pipeline", name)
 	}
-	return runTrace(ctx, apiClient, w, pid, job.ID, 3*time.Second)
+	return runTrace(ctx, apiClient, w, projectID, job.ID, 3*time.Second)
 }
 
 func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid any, jobId int64, pollInterval time.Duration) error {
