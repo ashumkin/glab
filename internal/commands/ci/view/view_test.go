@@ -631,7 +631,7 @@ func Test_jobsView(t *testing.T) {
 				jobsCh <- tt.jobs
 			}()
 			root.Box.Focus(nil)
-			jobsView(nil, jobsCh, inputCh, root, nil, "", "", newTitler(tt.titleFind, tt.titleReplace))
+			jobsView(nil, jobsCh, inputCh, root, nil, "", 0, newTitler(tt.titleFind, tt.titleReplace))
 			root.Focus(func(p tview.Primitive) { p.Focus(nil) })
 			root.Draw(screen)
 			linkJobsView(nil)(screen)
@@ -1466,6 +1466,29 @@ func TestCIView(t *testing.T) {
 				},
 			},
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/8 in your browser.\n",
+		},
+		{
+			name: "view ci pipeline on web for the explicitly specified refname",
+			cli:  "--web test-branch",
+			httpMocks: []httpMock{
+				{
+					http.MethodGet,
+
+					"https://gitlab.com/api/v4/projects/OWNER%2FREPO/pipelines/latest?ref=test-branch",
+					http.StatusOK,
+					`
+					{
+						"id": 9,
+						"iid": 123,
+						"web_url": "https://gitlab.com/OWNER/REPO/-/pipelines/9",
+						"project_id": 321,
+						"name": "test-branch",
+						"created_at": "2025-10-28T16:52:39.000+01:00",
+						"sha": "ec87bbc03675992e8048c01f497a18c796a18399"
+					}`,
+				},
+			},
+			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/9 in your browser.\n",
 		},
 	}
 
