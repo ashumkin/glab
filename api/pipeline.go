@@ -251,11 +251,11 @@ var GetPipelineFromBranch = func(client *gitlab.Client, ref, repo string) ([]*gi
 	return jobs, nil
 }
 
-var PipelineJobWithSha = func(client *gitlab.Client, pid interface{}, sha, name string) (*gitlab.Job, error) {
+var PipelineJob = func(client *gitlab.Client, pipeline *gitlab.PipelineInfo, name string) (*gitlab.Job, error) {
 	if client == nil {
 		client = apiClient.Lab()
 	}
-	jobs, _, err := PipelineJobsWithSha(client, pid, sha)
+	jobs, _, err := PipelineJobsWithID(client, pipeline.ProjectID, pipeline.ID)
 	if len(jobs) == 0 || err != nil {
 		return nil, err
 	}

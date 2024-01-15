@@ -53,11 +53,11 @@ func (t titler) getJobTitle(jobName string) string {
 }
 
 type ViewOpts struct {
-	RefName string
+	RefName                string
+	refNameIsSetExplicitly bool
 
 	ProjectID string
 	Commit    *gitlab.Commit
-	CommitSHA string
 	ApiClient *gitlab.Client
 	Output    io.Writer
 
@@ -169,14 +169,15 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 
 			opts.ProjectID = repo.FullName()
 
-			if opts.RefName == "" {
-				if len(args) == 1 {
-					opts.RefName = args[0]
-				} else {
-					opts.RefName, err = git.CurrentBranch()
-					if err != nil {
-						return err
-					}
+			if opts.RefName != "" {
+				opts.refNameIsSetExplicitly = true
+			} else if len(args) == 1 {
+				opts.RefName = args[0]
+				opts.refNameIsSetExplicitly = true
+			} else {
+				opts.RefName, err = git.CurrentBranch()
+				if err != nil {
+					return err
 				}
 			}
 
@@ -207,16 +208,29 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 					ID:           pipeInfos[0].SHA,
 					LastPipeline: pipeInfos[0],
 				}
-				opts.CommitSHA = opts.Commit.ID
+			} else if opts.refNameIsSetExplicitly {
+				var lastPipeline *gitlab.Pipeline
+				lastPipeline, err = api.GetLatestPipeline(opts.ApiClient, opts.ProjectID, opts.RefName)
+				if err != nil {
+					return err
+				}
+				if lastPipeline == nil {
+					return fmt.Errorf("Can't find pipeline for the ref: %s", opts.RefName)
+				}
+				opts.Commit = &gitlab.Commit{
+					ID: lastPipeline.SHA,
+					LastPipeline: &gitlab.PipelineInfo{
+						ID:     lastPipeline.ID,
+						WebURL: lastPipeline.WebURL,
+					},
+				}
 			} else {
 				opts.Commit, err = api.GetCommit(opts.ApiClient, opts.ProjectID, opts.RefName)
 				if err != nil {
 					return err
 				}
-
-				opts.CommitSHA = opts.Commit.ID
 				if opts.Commit.LastPipeline == nil {
-					return fmt.Errorf("Can't find pipeline for commit: %s", opts.CommitSHA)
+					return fmt.Errorf("Can't find pipeline for commit: %s", opts.Commit.ID)
 				}
 			}
 
@@ -557,12 +571,11 @@ func inputCapture(
 			app.Suspend(func() {
 				ctx, cancel := context.WithCancel(context.Background())
 				go func() {
-					err := ciutils.RunTraceSha(
+					err := ciutils.RunTraceForPipelineJob(
 						ctx,
 						opts.ApiClient,
 						opts.Output,
-						opts.ProjectID,
-						opts.CommitSHA,
+						opts.Commit.LastPipeline,
 						curJob.Name,
 					)
 					if err != nil {
@@ -746,12 +759,11 @@ func jobsView(
 				SetTitleAlign(tview.AlignLeft)
 
 			go func() {
-				err := ciutils.RunTraceSha(
+				err := ciutils.RunTraceForPipelineJob(
 					context.Background(),
 					opts.ApiClient,
 					vtclean.NewWriter(tview.ANSIWriter(tv), true),
-					opts.ProjectID,
-					opts.CommitSHA,
+					opts.Commit.LastPipeline,
 					curJob.Name,
 				)
 				if err != nil {
@@ -993,7 +1005,7 @@ func linkJobs(screen tcell.Screen, jobs []*ViewJob, boxes map[string]*tview.Text
 		v1 := boxes["jobs-"+jobs[i].Name]
 		v2 := boxes["jobs-"+jobs[k].Name]
 		link(screen, v1.Box, v2.Box, padding,
-			jobs[i].Stage == jobs[0].Stage,           // is first stage?
+			jobs[i].Stage == jobs[0].Stage, // is first stage?
 			jobs[i].Stage == jobs[len(jobs)-1].Stage) // is last stage?
 	}
 	return nil
