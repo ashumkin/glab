@@ -36,15 +36,16 @@ import (
 )
 
 type options struct {
-	io            *iostreams.IOStreams
-	factory       cmdutils.Factory
-	httpClient    func() (*gitlab.Client, error)
-	baseRepo      func() (glrepo.Interface, error)
-	config        func() config.Config
-	refName       string
-	openInBrowser bool
-	forMR         bool
-	titler        *titler
+	io                     *iostreams.IOStreams
+	factory                cmdutils.Factory
+	httpClient             func() (*gitlab.Client, error)
+	baseRepo               func() (glrepo.Interface, error)
+	config                 func() config.Config
+	refName                string
+	refNameIsSetExplicitly bool
+	openInBrowser          bool
+	forMR                  bool
+	titler                 *titler
 }
 
 type titler struct {
@@ -187,6 +188,7 @@ func (o *options) complete(args []string) error {
 	if o.refName == "" {
 		if len(args) == 1 {
 			o.refName = args[0]
+			o.refNameIsSetExplicitly = true
 		} else {
 			refName, err := git.CurrentBranch()
 			if err != nil {
@@ -213,8 +215,8 @@ func (o *options) run(args []string) error {
 	projectID := repo.FullName()
 
 	var commit *gitlab.Commit
+	var pipelineID int
 	commit, _, err = apiClient.Commits.GetCommit(projectID, o.refName, nil)
-	var commitSHA string
 	if o.forMR {
 		var mrIDStr string
 		var mrID int
@@ -245,18 +247,34 @@ func (o *options) run(args []string) error {
 			ID:           pipeInfos[0].SHA,
 			LastPipeline: pipeInfos[0],
 		}
-		commitSHA = commit.ID
+	} else if o.refNameIsSetExplicitly {
+		var lastPipeline *gitlab.Pipeline
+		lastPipeline, _, err = apiClient.Pipelines.GetLatestPipeline(projectID, &gitlab.GetLatestPipelineOptions{Ref: gitlab.Ptr(o.refName)}, nil)
+		if err != nil {
+			return err
+		}
+		if lastPipeline == nil {
+			return fmt.Errorf("Can't find pipeline for the ref: %s", o.refName)
+		}
+		commit = &gitlab.Commit{
+			ID: lastPipeline.SHA,
+			LastPipeline: &gitlab.PipelineInfo{
+				ID:        lastPipeline.ID,
+				WebURL:    lastPipeline.WebURL,
+				ProjectID: lastPipeline.ProjectID,
+				CreatedAt: lastPipeline.CreatedAt,
+			},
+		}
 	} else {
 		commit, _, err = apiClient.Commits.GetCommit(projectID, o.refName, nil)
 		if err != nil {
 			return err
 		}
-
-		commitSHA = commit.ID
 		if commit.LastPipeline == nil {
-			return fmt.Errorf("Can't find pipeline for commit: %s", commitSHA)
+			return fmt.Errorf("Can't find pipeline for commit: %s", commit.ID)
 		}
 	}
+	pipelineID = commit.LastPipeline.ID
 
 	cfg := o.config()
 
@@ -299,13 +317,13 @@ func (o *options) run(args []string) error {
 	defer recoverPanic(app)
 
 	var navi navigator
-	app.SetInputCapture(inputCapture(app, root, navi, inputCh, forceUpdateCh, o, apiClient, projectID, commitSHA))
+	app.SetInputCapture(inputCapture(app, root, navi, inputCh, forceUpdateCh, o, apiClient, projectID, pipelineID))
 	go updateJobs(app, jobsCh, forceUpdateCh, apiClient, commit)
 	go func() {
 		defer recoverPanic(app)
 		for {
 			app.SetFocus(root)
-			jobsView(app, jobsCh, inputCh, root, apiClient, projectID, commitSHA, o.titler)
+			jobsView(app, jobsCh, inputCh, root, apiClient, projectID, pipelineID, o.titler)
 			app.Draw()
 		}
 	}()
@@ -324,7 +342,7 @@ func inputCapture(
 	opts *options,
 	apiClient *gitlab.Client,
 	projectID string,
-	commitSHA string,
+	pipelineID int,
 ) func(event *tcell.EventKey) *tcell.EventKey {
 	return func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Rune() == 'q' || event.Key() == tcell.KeyEscape {
@@ -586,12 +604,12 @@ func inputCapture(
 			app.Suspend(func() {
 				ctx, cancel := context.WithCancel(context.Background())
 				go func() {
-					err := ciutils.RunTraceSha(
+					err := ciutils.RunTraceForPipelineJob(
 						ctx,
 						apiClient,
 						opts.io.StdOut,
 						projectID,
-						commitSHA,
+						pipelineID,
 						curJob.Name,
 					)
 					if err != nil {
@@ -747,7 +765,7 @@ func jobsView(
 	root *tview.Pages,
 	apiClient *gitlab.Client,
 	projectID string,
-	commitSHA string,
+	pipelineID int,
 	titler *titler,
 ) {
 	select {
@@ -777,12 +795,12 @@ func jobsView(
 				SetTitleAlign(tview.AlignLeft)
 
 			go func() {
-				err := ciutils.RunTraceSha(
+				err := ciutils.RunTraceForPipelineJob(
 					context.Background(),
 					apiClient,
 					vtclean.NewWriter(tview.ANSIWriter(tv), true),
 					projectID,
-					commitSHA,
+					pipelineID,
 					curJob.Name,
 				)
 				if err != nil {
