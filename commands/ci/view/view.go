@@ -52,7 +52,8 @@ func (t titler) getJobTitle(jobName string) string {
 }
 
 type ViewOpts struct {
-	RefName string
+	RefName                string
+	refNameIsSetExplicitly bool
 
 	ProjectID string
 	Commit    *gitlab.Commit
@@ -168,14 +169,15 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 
 			opts.ProjectID = repo.FullName()
 
-			if opts.RefName == "" {
-				if len(args) == 1 {
-					opts.RefName = args[0]
-				} else {
-					opts.RefName, err = git.CurrentBranch()
-					if err != nil {
-						return err
-					}
+			if opts.RefName != "" {
+				opts.refNameIsSetExplicitly = true
+			} else if len(args) == 1 {
+				opts.RefName = args[0]
+				opts.refNameIsSetExplicitly = true
+			} else {
+				opts.RefName, err = git.CurrentBranch()
+				if err != nil {
+					return err
 				}
 			}
 
@@ -207,12 +209,25 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 					LastPipeline: pipeInfos[0],
 				}
 				opts.CommitSHA = opts.Commit.ID
+			} else if opts.refNameIsSetExplicitly {
+				var lastPipeline *gitlab.PipelineInfo
+				lastPipeline, err = api.GetLastPipelineForRef(opts.ApiClient, opts.ProjectID, opts.RefName)
+				if err != nil {
+					return err
+				}
+				if lastPipeline == nil {
+					return fmt.Errorf("Can't find pipeline for the ref: %s", opts.RefName)
+				}
+				opts.Commit = &gitlab.Commit{
+					ID:           lastPipeline.SHA,
+					LastPipeline: lastPipeline,
+				}
+				opts.CommitSHA = opts.Commit.ID
 			} else {
 				opts.Commit, err = api.GetCommit(opts.ApiClient, opts.ProjectID, opts.RefName)
 				if err != nil {
 					return err
 				}
-
 				opts.CommitSHA = opts.Commit.ID
 				if opts.Commit.LastPipeline == nil {
 					return fmt.Errorf("Can't find pipeline for commit : %s", opts.CommitSHA)
@@ -553,12 +568,11 @@ func inputCapture(
 			app.Suspend(func() {
 				ctx, cancel := context.WithCancel(context.Background())
 				go func() {
-					err := ciutils.RunTraceSha(
+					err := ciutils.RunTraceForPipelineJob(
 						ctx,
 						opts.ApiClient,
 						opts.Output,
-						opts.ProjectID,
-						opts.CommitSHA,
+						opts.Commit.LastPipeline,
 						curJob.Name,
 					)
 					if err != nil {
@@ -739,12 +753,11 @@ func jobsView(
 			tv.SetBorderPadding(0, 0, 1, 1).SetBorder(true)
 
 			go func() {
-				err := ciutils.RunTraceSha(
+				err := ciutils.RunTraceForPipelineJob(
 					context.Background(),
 					opts.ApiClient,
 					vtclean.NewWriter(tview.ANSIWriter(tv), true),
-					opts.ProjectID,
-					opts.CommitSHA,
+					opts.Commit.LastPipeline,
 					curJob.Name,
 				)
 				if err != nil {
