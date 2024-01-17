@@ -36,16 +36,17 @@ import (
 type titler struct {
 	re      *regexp.Regexp
 	replace string
+	maxLen  int
 }
 
-func newTitler(find, replace string) *titler {
+func newTitler(find, replace string, maxLen int) *titler {
 	if find == "" {
 		find = ".+"
 	}
 	if replace == "" {
 		replace = "\\0"
 	}
-	return &titler{re: regexp.MustCompile(find), replace: replace}
+	return &titler{re: regexp.MustCompile(find), replace: replace, maxLen: maxLen}
 }
 
 func (t titler) getJobTitle(jobName string) string {
@@ -124,11 +125,18 @@ func ViewJobFromJob(job *gitlab.Job) *ViewJob {
 	return vj
 }
 
+const defaultTitleMaxLen = 20
+
 func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 	config, _ := f.Config()
 	ff, _ := config.Get("", "ci.view.title.match")
 	r, _ := config.Get("", "ci.view.title.replace")
-	opts := ViewOpts{titler: newTitler(ff, r)}
+	tml, _ := config.Get("", "ci.view.title.maxlength")
+	titleMaxLen, err := strconv.Atoi(tml)
+	if err != nil {
+		titleMaxLen = defaultTitleMaxLen
+	}
+	opts := ViewOpts{titler: newTitler(ff, r, titleMaxLen)}
 	pipelineCIView := &cobra.Command{
 		Use:   "view [branch/tag]",
 		Short: "View, run, trace, log, and cancel CI/CD job's current pipeline.",
@@ -792,7 +800,6 @@ func jobsView(
 	var (
 		rowIdx   int
 		stageIdx int
-		maxTitle = 20
 	)
 	boxKeys := make(map[string]bool)
 	for _, j := range jobs {
@@ -803,7 +810,7 @@ func jobsView(
 			key := "stage-" + j.Stage
 			boxKeys[key] = true
 
-			x, y, w, h := boxX, maxY/6-4, maxTitle+2, 3
+			x, y, w, h := boxX, maxY/6-4, opts.titler.maxLen+2, 3
 			b := box(root, key, x, y, w, h)
 
 			caser := cases.Title(language.English)
@@ -826,7 +833,7 @@ func jobsView(
 
 		key := "jobs-" + j.Name
 		boxKeys[key] = true
-		x, y, w, h := boxX, maxY/6+(rowIdx*5), maxTitle+2, 4
+		x, y, w, h := boxX, maxY/6+(rowIdx*5), opts.titler.maxLen+2, 4
 		b := box(root, key, x, y, w, h)
 		// The scope of jobs to show, one or array of: created, pending, running,
 		// failed, success, canceled, skipped; showing all jobs if none provided
@@ -868,7 +875,7 @@ func jobsView(
 		// tview default aligns center, which is nice, but if
 		// the title is too long we want to bias towards seeing
 		// the beginning of it
-		if tview.TaggedStringWidth(title) > maxTitle {
+		if tview.TaggedStringWidth(title) > opts.titler.maxLen {
 			b.SetTitleAlign(tview.AlignLeft)
 		}
 		triggerText := ""
