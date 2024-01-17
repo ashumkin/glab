@@ -52,16 +52,17 @@ type options struct {
 type titler struct {
 	re      *regexp.Regexp
 	replace string
+	maxLen  int
 }
 
-func newTitler(find, replace string) *titler {
+func newTitler(find, replace string, maxLen int) *titler {
 	if find == "" {
 		find = ".+"
 	}
 	if replace == "" {
 		replace = "$0"
 	}
-	return &titler{re: regexp.MustCompile(find), replace: replace}
+	return &titler{re: regexp.MustCompile(find), replace: replace, maxLen: maxLen}
 }
 
 func (t titler) getJobTitle(jobName string) string {
@@ -123,6 +124,8 @@ func ViewJobFromJob(job *gitlab.Job) *ViewJob {
 	vj.Kind = Job
 	return vj
 }
+
+const defaultTitleMaxLen = 20
 
 func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	opts := options{
@@ -315,7 +318,12 @@ func (o *options) run(ctx context.Context, args []string) error {
 	cfg := o.config()
 	ff, _ := cfg.Get("", "ci.view.title.match")
 	r, _ := cfg.Get("", "ci.view.title.replace")
-	titlr := newTitler(ff, r)
+	tml, _ := cfg.Get("", "ci.view.title.maxlength")
+	titleMaxLen, err := strconv.Atoi(tml)
+	if err != nil {
+		titleMaxLen = defaultTitleMaxLen
+	}
+	titlr := newTitler(ff, r, titleMaxLen)
 	go func() {
 		defer recoverPanic(app)
 		for {
@@ -872,7 +880,6 @@ func jobsView(
 	var (
 		rowIdx   int
 		stageIdx int
-		maxTitle = 20
 	)
 	boxKeys := make(map[string]bool)
 	for _, j := range jobs {
@@ -883,7 +890,7 @@ func jobsView(
 			key := "stage-" + j.Stage
 			boxKeys[key] = true
 
-			x, y, w, h := boxX, maxY/6-4, maxTitle+2, 3
+			x, y, w, h := boxX, maxY/6-4, titler.maxLen+2, 3
 			b := box(root, key, x, y, w, h)
 
 			caser := cases.Title(language.English)
@@ -906,7 +913,7 @@ func jobsView(
 
 		key := "jobs-" + j.Name
 		boxKeys[key] = true
-		x, y, w, h := boxX, maxY/6+(rowIdx*5), maxTitle+2, 4
+		x, y, w, h := boxX, maxY/6+(rowIdx*5), titler.maxLen+2, 4
 		b := box(root, key, x, y, w, h)
 		// The scope of jobs to show, one or array of: created, pending, running,
 		// failed, success, canceled, skipped; showing all jobs if none provided
@@ -949,7 +956,7 @@ func jobsView(
 		// tview default aligns center, which is nice, but if
 		// the title is too long we want to bias towards seeing
 		// the beginning of it
-		if tview.TaggedStringWidth(title) > maxTitle {
+		if tview.TaggedStringWidth(title) > titler.maxLen {
 			b.SetTitleAlign(tview.AlignLeft)
 		}
 		triggerText := ""
