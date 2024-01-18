@@ -45,6 +45,7 @@ type options struct {
 	refNameIsSetExplicitly bool
 	openInBrowser          bool
 	forMR                  bool
+	pipelineID             int
 	titler                 *titler
 }
 
@@ -186,6 +187,8 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 
 	pipelineCIView.Flags().
 		StringVarP(&opts.refName, "branch", "b", "", "Check pipeline status for a branch or tag. Defaults to the current branch.")
+	pipelineCIView.Flags().
+		IntVarP(&opts.pipelineID, "pipeline", "p", -1, "Check pipeline status for the Pipeline ID")
 	pipelineCIView.Flags().BoolVarP(&opts.forMR, "mr", "m", false, "Check pipeline status for a MR. (Default is the current MR)")
 	pipelineCIView.Flags().BoolVarP(&opts.openInBrowser, "web", "w", false, "Open pipeline in a browser. Uses default browser, or browser specified in BROWSER variable.")
 
@@ -206,6 +209,9 @@ func (o *options) complete(args []string) error {
 		}
 	}
 
+	if o.refName != "" && o.pipelineID != -1 {
+		return fmt.Errorf("branch/tag and pipeline ID cannot be specified simultaneously")
+	}
 	return nil
 }
 
@@ -271,6 +277,26 @@ func (o *options) run(args []string) error {
 				WebURL:    lastPipeline.WebURL,
 				ProjectID: lastPipeline.ProjectID,
 				CreatedAt: lastPipeline.CreatedAt,
+			},
+		}
+	} else if o.pipelineID > -1 {
+		pipeInfo, _, err := apiClient.Pipelines.GetPipeline(projectID, o.pipelineID)
+		if err != nil {
+			return fmt.Errorf("Cannot find pipeline by ID %d: %w", o.pipelineID, err)
+		}
+		commit = &gitlab.Commit{
+			ID: pipeInfo.SHA,
+			LastPipeline: &gitlab.PipelineInfo{
+				ID:        pipeInfo.ID,
+				IID:       pipeInfo.IID,
+				ProjectID: pipeInfo.ProjectID,
+				Status:    pipeInfo.Status,
+				Source:    string(pipeInfo.Source),
+				Ref:       pipeInfo.Ref,
+				SHA:       pipeInfo.SHA,
+				WebURL:    pipeInfo.WebURL,
+				UpdatedAt: pipeInfo.UpdatedAt,
+				CreatedAt: pipeInfo.CreatedAt,
 			},
 		}
 	} else {
