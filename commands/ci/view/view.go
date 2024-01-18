@@ -66,6 +66,15 @@ type ViewOpts struct {
 	User          *gitlab.BasicUser
 	forMR         bool
 	titler        *titler
+	PipelineID    int
+}
+
+func (o *ViewOpts) Test() error {
+	if o.RefName != "" && o.PipelineID != -1 {
+		return fmt.Errorf("branch/tag and pipeline ID cannot be specified simultaneously")
+	}
+
+	return nil
 }
 
 type ViewJobKind int64
@@ -177,8 +186,32 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 
 			opts.ProjectID = repo.FullName()
 
+			if err := opts.Test(); err != nil {
+				return err
+			}
 			if opts.RefName != "" {
 				opts.refNameIsSetExplicitly = true
+			} else if opts.PipelineID > -1 {
+				pipeInfo, _, err := opts.ApiClient.Pipelines.GetPipeline(opts.ProjectID, opts.PipelineID)
+				if err != nil {
+					return fmt.Errorf("Cannot find pipeline by ID %d: %w", opts.PipelineID, err)
+				}
+				opts.Commit = &gitlab.Commit{
+					ID: pipeInfo.SHA,
+					LastPipeline: &gitlab.PipelineInfo{
+						ID:        pipeInfo.ID,
+						IID:       pipeInfo.IID,
+						ProjectID: pipeInfo.ProjectID,
+						Status:    pipeInfo.Status,
+						Source:    pipeInfo.Source,
+						Ref:       pipeInfo.Ref,
+						SHA:       pipeInfo.SHA,
+						WebURL:    pipeInfo.WebURL,
+						UpdatedAt: pipeInfo.UpdatedAt,
+						CreatedAt: pipeInfo.CreatedAt,
+					},
+				}
+				opts.CommitSHA = opts.Commit.ID
 			} else if len(args) == 1 {
 				opts.RefName = args[0]
 				opts.refNameIsSetExplicitly = true
@@ -231,7 +264,7 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 					LastPipeline: lastPipeline,
 				}
 				opts.CommitSHA = opts.Commit.ID
-			} else {
+			} else if opts.PipelineID == -1 {
 				opts.Commit, err = api.GetCommit(opts.ApiClient, opts.ProjectID, opts.RefName)
 				if err != nil {
 					return err
@@ -268,6 +301,8 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 
 	pipelineCIView.Flags().
 		StringVarP(&opts.RefName, "branch", "b", "", "Check pipeline status for a branch/tag. (Default is the current branch)")
+	pipelineCIView.Flags().
+		IntVarP(&opts.PipelineID, "pipeline", "p", -1, "Check pipeline status for the Pipeline ID")
 	pipelineCIView.Flags().BoolVarP(&opts.forMR, "mr", "m", false, "Check pipeline status for a MR. (Default is the current MR)")
 	pipelineCIView.Flags().BoolVarP(&opts.OpenInBrowser, "web", "w", false, "Open pipeline in a browser. Uses default browser or browser specified in BROWSER variable")
 
