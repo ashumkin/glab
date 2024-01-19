@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"charm.land/huh/v2"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/gdamore/tcell/v2"
 	"github.com/lunixbochs/vtclean"
@@ -46,6 +47,7 @@ type options struct {
 	openInBrowser bool
 	pipelineID    int64
 	forMR         bool
+	interactive   bool
 }
 
 type titler struct {
@@ -184,12 +186,16 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	pipelineCIView.Flags().BoolVarP(&opts.openInBrowser, "web", "w", false, "Open pipeline in a browser. Uses the default browser, or the browser specified in the BROWSER environment variable.")
 	pipelineCIView.Flags().BoolVarP(&opts.forMR, "mr", "m", false, "Check pipeline status for a MR. (Default is the current MR)")
 	pipelineCIView.Flags().Int64VarP(&opts.pipelineID, "pipelineid", "p", 0, "Check pipeline status for a specific pipeline ID.")
+	pipelineCIView.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Interactively choose pipeline to view from a list")
 	pipelineCIView.MarkFlagsMutuallyExclusive("branch", "pipelineid")
 
 	return pipelineCIView
 }
 
 func (o *options) complete(args []string) error {
+	if o.interactive {
+		return nil
+	}
 	if o.refName == "" {
 		if len(args) == 1 {
 			o.refName = args[0]
@@ -224,7 +230,12 @@ func (o *options) run(ctx context.Context, args []string) error {
 	projectID := repo.FullName()
 
 	var pipeline *gitlab.Pipeline
-	if o.forMR {
+	if o.interactive {
+		pipeline, err = choosePipeline(o.io, client, projectID, repo)
+		if err != nil {
+			return err
+		}
+	} else if o.forMR {
 		var mrIDStr string
 		var mrID int64
 		if len(args) > 0 {
@@ -287,10 +298,69 @@ func (o *options) run(ctx context.Context, args []string) error {
 		return utils.OpenInBrowser(pipeline.WebURL, browser)
 	}
 
-	// The job grid, logs, cancel, and retry all read the top of this stack to
-	// decide which pipeline they are acting on.
-	pipelines := append(make([]gitlab.PipelineInfo, 0, 32), pipelineInfo(pipeline))
+	for {
+		if err := drawView(ctx, o, pipeline, projectID, client); err != nil {
+			return err
+		}
+		if !o.interactive {
+			return nil
+		}
+		pipeline, err = choosePipeline(o.io, client, projectID, repo)
+		if err != nil {
+			return err
+		}
+	}
+}
 
+func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectID string, repo glrepo.Interface) (*gitlab.Pipeline, error) {
+	pipelinesOptions := gitlab.ListProjectPipelinesOptions{
+		ListOptions: gitlab.ListOptions{
+			Page:    1,
+			PerPage: 30,
+		},
+	}
+
+	pipes, _, err := apiClient.Pipelines.ListProjectPipelines(repo.FullName(), &pipelinesOptions)
+	if len(pipes) == 0 {
+		return nil, fmt.Errorf("no pipelines found")
+	}
+	pipeMap := make(map[string]*gitlab.PipelineInfo)
+	var pipeList []string
+	for _, pipe := range pipes {
+		var duration string
+		if pipe.CreatedAt != nil {
+			duration = "(" + utils.TimeToPrettyTimeAgo(*pipe.CreatedAt) + ")"
+		}
+
+		t := fmt.Sprintf("(%s) • #%d (%d) %s %s", pipe.Status, pipe.ID, pipe.IID, pipe.Ref, duration)
+		pipeList = append(pipeList, t)
+		pipeMap[t] = pipe
+	}
+	chosenPipeline := pipeList[0]
+	if !ios.PromptEnabled() {
+		return nil, fmt.Errorf("interactive mode with no TTY")
+	}
+	err = ios.Select(context.Background(), &chosenPipeline, "Choose pipeline", pipeList)
+	if err != nil {
+		if !errors.Is(err, huh.ErrUserAborted) {
+			return nil, errors.New("pipeline must be chosen")
+		}
+		return nil, err
+	}
+	pipeline, _, err := apiClient.Pipelines.GetPipeline(projectID, pipeMap[chosenPipeline].ID)
+	if err != nil {
+		return nil, fmt.Errorf("can't get pipeline #%d info: %w", pipeMap[chosenPipeline].ID, err)
+	}
+	return pipeline, nil
+}
+
+func drawView(
+	ctx context.Context,
+	o *options,
+	pipeline *gitlab.Pipeline,
+	projectID string,
+	client *gitlab.Client,
+) error {
 	// Use terminal default colors instead of tview's hardcoded white-on-black theme.
 	// tview.Styles = tview.Theme{}
 
@@ -308,6 +378,10 @@ func (o *options) run(ctx context.Context, args []string) error {
 	jobsCh := make(chan []*ViewJob)
 	forceUpdateCh := make(chan bool)
 	inputCh := make(chan struct{})
+
+	// The job grid, logs, cancel, and retry all read the top of this stack to
+	// decide which pipeline they are acting on.
+	pipelines := append(make([]gitlab.PipelineInfo, 0, 32), pipelineInfo(pipeline))
 
 	screen, err := tcell.NewScreen()
 	if err != nil {
