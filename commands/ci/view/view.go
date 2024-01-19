@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/gitlab-org/cli/pkg/prompt"
+
 	"gitlab.com/gitlab-org/cli/commands/mr/mrutils"
 
 	"gitlab.com/gitlab-org/cli/api"
@@ -68,6 +70,7 @@ type ViewOpts struct {
 	forMR         bool
 	titler        *titler
 	PipelineID    int
+	choose        bool
 }
 
 func (o *ViewOpts) Test() error {
@@ -76,6 +79,14 @@ func (o *ViewOpts) Test() error {
 	}
 
 	return nil
+}
+
+func (o *ViewOpts) createCommitFromPipeInfo(info *gitlab.PipelineInfo) {
+	o.Commit = &gitlab.Commit{
+		ID:           info.SHA,
+		LastPipeline: info,
+	}
+	o.CommitSHA = o.Commit.ID
 }
 
 type ViewJobKind int64
@@ -190,29 +201,55 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 			if err := opts.Test(); err != nil {
 				return err
 			}
-			if opts.RefName != "" {
+			if opts.choose {
+				l := &gitlab.ListProjectPipelinesOptions{}
+				l.Page = 1
+				l.PerPage = 30
+
+				pipes, err := api.ListProjectPipelines(opts.ApiClient, repo.FullName(), l)
+				if err != nil {
+					return err
+				}
+				if len(pipes) == 0 {
+					return fmt.Errorf("no pipelines found")
+				}
+				pipeMap := make(map[string]*gitlab.PipelineInfo)
+				var pipeList []string
+				for _, pipe := range pipes {
+					var duration string
+					if pipe.CreatedAt != nil {
+						duration = "(" + utils.TimeToPrettyTimeAgo(*pipe.CreatedAt) + ")"
+					}
+
+					t := fmt.Sprintf("(%s) • #%d (%d) %s %s", pipe.Status, pipe.ID, pipe.IID, pipe.Ref, duration)
+					pipeList = append(pipeList, t)
+					pipeMap[t] = pipe
+				}
+				chosenPipeline := pipeList[0]
+				err = prompt.Select(&chosenPipeline, "pipeline", "Choose pipeline", pipeList)
+				if err != nil {
+					return fmt.Errorf("pipeline must be chosen")
+				}
+				opts.createCommitFromPipeInfo(pipeMap[chosenPipeline])
+			} else if opts.RefName != "" {
 				opts.refNameIsSetExplicitly = true
 			} else if opts.PipelineID > -1 {
 				pipeInfo, _, err := opts.ApiClient.Pipelines.GetPipeline(opts.ProjectID, opts.PipelineID)
 				if err != nil {
 					return fmt.Errorf("Cannot find pipeline by ID %d: %w", opts.PipelineID, err)
 				}
-				opts.Commit = &gitlab.Commit{
-					ID: pipeInfo.SHA,
-					LastPipeline: &gitlab.PipelineInfo{
-						ID:        pipeInfo.ID,
-						IID:       pipeInfo.IID,
-						ProjectID: pipeInfo.ProjectID,
-						Status:    pipeInfo.Status,
-						Source:    pipeInfo.Source,
-						Ref:       pipeInfo.Ref,
-						SHA:       pipeInfo.SHA,
-						WebURL:    pipeInfo.WebURL,
-						UpdatedAt: pipeInfo.UpdatedAt,
-						CreatedAt: pipeInfo.CreatedAt,
-					},
-				}
-				opts.CommitSHA = opts.Commit.ID
+				opts.createCommitFromPipeInfo(&gitlab.PipelineInfo{
+					ID:        pipeInfo.ID,
+					IID:       pipeInfo.IID,
+					ProjectID: pipeInfo.ProjectID,
+					Status:    pipeInfo.Status,
+					Source:    pipeInfo.Source,
+					Ref:       pipeInfo.Ref,
+					SHA:       pipeInfo.SHA,
+					WebURL:    pipeInfo.WebURL,
+					UpdatedAt: pipeInfo.UpdatedAt,
+					CreatedAt: pipeInfo.CreatedAt,
+				})
 			} else if len(args) == 1 {
 				opts.RefName = args[0]
 				opts.refNameIsSetExplicitly = true
@@ -223,7 +260,8 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				}
 			}
 
-			if opts.forMR {
+			if opts.choose {
+			} else if opts.forMR {
 				mrIDStr := cmd.Flags().Arg(0)
 				var mrID int
 				if len(mrIDStr) > 0 {
@@ -246,11 +284,7 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				if len(pipeInfos) == 0 {
 					return fmt.Errorf("Cannot find pipelines for MR %d", mrID)
 				}
-				opts.Commit = &gitlab.Commit{
-					ID:           pipeInfos[0].SHA,
-					LastPipeline: pipeInfos[0],
-				}
-				opts.CommitSHA = opts.Commit.ID
+				opts.createCommitFromPipeInfo(pipeInfos[0])
 			} else if opts.refNameIsSetExplicitly {
 				var lastPipeline *gitlab.PipelineInfo
 				lastPipeline, err = api.GetLastPipelineForRef(opts.ApiClient, opts.ProjectID, opts.RefName)
@@ -260,11 +294,7 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				if lastPipeline == nil {
 					return fmt.Errorf("Can't find pipeline for the ref: %s", opts.RefName)
 				}
-				opts.Commit = &gitlab.Commit{
-					ID:           lastPipeline.SHA,
-					LastPipeline: lastPipeline,
-				}
-				opts.CommitSHA = opts.Commit.ID
+				opts.createCommitFromPipeInfo(lastPipeline)
 			} else if opts.PipelineID == -1 {
 				opts.Commit, err = api.GetCommit(opts.ApiClient, opts.ProjectID, opts.RefName)
 				if err != nil {
@@ -305,6 +335,7 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 	pipelineCIView.Flags().
 		IntVarP(&opts.PipelineID, "pipeline", "p", -1, "Check pipeline status for the Pipeline ID")
 	pipelineCIView.Flags().BoolVarP(&opts.forMR, "mr", "m", false, "Check pipeline status for a MR. (Default is the current MR)")
+	pipelineCIView.Flags().BoolVarP(&opts.choose, "choose", "c", false, "Choose pipeline to view from a list")
 	pipelineCIView.Flags().BoolVarP(&opts.OpenInBrowser, "web", "w", false, "Open pipeline in a browser. Uses default browser, or browser specified in BROWSER variable.")
 
 	return pipelineCIView
