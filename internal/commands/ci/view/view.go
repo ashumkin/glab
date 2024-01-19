@@ -21,6 +21,7 @@ import (
 	"gitlab.com/gitlab-org/cli/internal/git"
 	"gitlab.com/gitlab-org/cli/internal/glrepo"
 	"gitlab.com/gitlab-org/cli/internal/iostreams"
+	"gitlab.com/gitlab-org/cli/internal/prompt"
 	"gitlab.com/gitlab-org/cli/internal/utils"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -46,6 +47,7 @@ type options struct {
 	openInBrowser          bool
 	forMR                  bool
 	pipelineID             int
+	choose                 bool
 	titler                 *titler
 }
 
@@ -191,6 +193,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		IntVarP(&opts.pipelineID, "pipeline", "p", -1, "Check pipeline status for the Pipeline ID")
 	pipelineCIView.Flags().BoolVarP(&opts.forMR, "mr", "m", false, "Check pipeline status for a MR. (Default is the current MR)")
 	pipelineCIView.Flags().BoolVarP(&opts.openInBrowser, "web", "w", false, "Open pipeline in a browser. Uses default browser, or browser specified in BROWSER variable.")
+	pipelineCIView.Flags().BoolVarP(&opts.choose, "choose", "c", false, "Choose pipeline to view from a list")
 
 	return pipelineCIView
 }
@@ -230,8 +233,12 @@ func (o *options) run(args []string) error {
 
 	var commit *gitlab.Commit
 	var pipelineID int
-	commit, _, err = apiClient.Commits.GetCommit(projectID, o.refName, nil)
-	if o.forMR {
+	if o.choose {
+		commit, err = choosePipeline(apiClient, repo)
+		if err != nil {
+			return err
+		}
+	} else if o.forMR {
 		var mrIDStr string
 		var mrID int
 		if len(args) > 0 {
@@ -321,12 +328,66 @@ func (o *options) run(args []string) error {
 		return utils.OpenInBrowser(webURL, browser)
 	}
 
-	p, _, err := apiClient.Pipelines.GetPipeline(projectID, commit.LastPipeline.ID)
-	if err != nil {
-		return fmt.Errorf("Can't get pipeline #%d info: %s", commit.LastPipeline.ID, err)
+	var errLoop error
+	for errLoop == nil {
+		p, _, err := apiClient.Pipelines.GetPipeline(projectID, commit.LastPipeline.ID)
+		if err != nil {
+			errLoop = fmt.Errorf("Can't get pipeline #%d info: %s", commit.LastPipeline.ID, err)
+			break
+		}
+		errLoop = drawView(o, commit, projectID, p.User.Name, apiClient, pipelineID)
+		if errLoop != nil {
+			return errLoop
+		}
+		if !o.choose {
+			return nil
+		}
+		commit, errLoop = choosePipeline(apiClient, repo)
 	}
-	pipelineUser := p.User
+	return errLoop
+}
 
+func choosePipeline(apiClient *gitlab.Client, repo glrepo.Interface) (*gitlab.Commit, error) {
+	l := &gitlab.ListProjectPipelinesOptions{}
+	l.Page = 1
+	l.PerPage = 30
+
+	pipes, _, err := apiClient.Pipelines.ListProjectPipelines(repo.FullName(), l, nil)
+	if len(pipes) == 0 {
+		return nil, fmt.Errorf("no pipelines found")
+	}
+	pipeMap := make(map[string]*gitlab.PipelineInfo)
+	var pipeList []string
+	for _, pipe := range pipes {
+		var duration string
+		if pipe.CreatedAt != nil {
+			duration = "(" + utils.TimeToPrettyTimeAgo(*pipe.CreatedAt) + ")"
+		}
+
+		t := fmt.Sprintf("(%s) • #%d (%d) %s %s", pipe.Status, pipe.ID, pipe.IID, pipe.Ref, duration)
+		pipeList = append(pipeList, t)
+		pipeMap[t] = pipe
+	}
+	chosenPipeline := pipeList[0]
+	err = prompt.Select(&chosenPipeline, "pipeline", "Choose pipeline", pipeList)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline must be chosen")
+	}
+	commit := &gitlab.Commit{
+		ID:           pipeMap[chosenPipeline].SHA,
+		LastPipeline: pipeMap[chosenPipeline],
+	}
+	return commit, nil
+}
+
+func drawView(
+	o *options,
+	commit *gitlab.Commit,
+	projectID string,
+	pipelineUser string,
+	apiClient *gitlab.Client,
+	pipelineID int,
+) error {
 	root := tview.NewPages()
 	root.
 		SetBackgroundColor(tcell.ColorDefault).
@@ -337,7 +398,7 @@ func (o *options) run(args []string) error {
 		SetTitleColor(tcell.ColorDefault).
 		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s) triggered %s by %s ",
 			commit.LastPipeline.ID, projectID, o.refName,
-			utils.TimeToPrettyTimeAgo(*commit.LastPipeline.CreatedAt), pipelineUser.Name))
+			utils.TimeToPrettyTimeAgo(*commit.LastPipeline.CreatedAt), pipelineUser))
 
 	jobsCh := make(chan []*ViewJob)
 	forceUpdateCh := make(chan bool)
