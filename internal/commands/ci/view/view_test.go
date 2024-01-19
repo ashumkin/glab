@@ -1528,6 +1528,7 @@ func TestCIView(t *testing.T) {
 		cli            string
 		setupMock      func(tc *gitlabtesting.TestClient)
 		expectedOutput string
+		expectedErr    func(t assert.TestingT, err error, msg string, args ...interface{}) bool
 	}
 
 	tests := []testCase{
@@ -1566,6 +1567,7 @@ func TestCIView(t *testing.T) {
 						Status: new(gitlab.Running),
 					}, nil, nil)
 			},
+			expectedErr:    assert.NoErrorf,
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/225 in your browser.\n",
 		},
 		{
@@ -1596,6 +1598,7 @@ func TestCIView(t *testing.T) {
 						Status: new(gitlab.Running),
 					}, nil, nil)
 			},
+			expectedErr:    assert.NoErrorf,
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/5 in your browser.\n",
 		},
 		{
@@ -1613,6 +1616,7 @@ func TestCIView(t *testing.T) {
 						},
 					}, nil, nil)
 			},
+			expectedErr:    assert.NoErrorf,
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/8 in your browser.\n",
 		},
 		{
@@ -1630,7 +1634,27 @@ func TestCIView(t *testing.T) {
 						CreatedAt: &createdAt,
 					}, nil, nil)
 			},
+			expectedErr:    assert.NoErrorf,
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/9 in your browser.\n",
+		},
+		{
+			name: "view ci pipeline on web interactively",
+			cli:  "--web --interactive",
+			setupMock: func(tc *gitlabtesting.TestClient) {
+				tc.MockPipelines.EXPECT().
+					ListProjectPipelines("OWNER/REPO", &gitlab.ListProjectPipelinesOptions{ListOptions: gitlab.ListOptions{PerPage: 30, Page: 1}}, gomock.Any()).
+					Return([]*gitlab.PipelineInfo{
+						{
+							ID:        10,
+							Ref:       "test-branch-interactive",
+							SHA:       "102280f46b85522245fd8293eb810c2629c379bb",
+							Status:    "created",
+							WebURL:    "https://gitlab.com/OWNER/REPO/-/pipelines/10",
+							CreatedAt: &createdAt,
+						},
+					}, nil, nil)
+			},
+			expectedErr: assert.Errorf,
 		},
 	}
 
@@ -1646,10 +1670,13 @@ func TestCIView(t *testing.T) {
 
 			exec := cmdtest.SetupCmdForTest(t, NewCmdView, true,
 				cmdtest.WithGitLabClient(testClient.Client),
+				func(f *cmdtest.Factory) {
+					f.IOStub.SetPrompt("true")
+				},
 			)
 			output, err := exec(tc.cli)
 
-			if assert.NoErrorf(t, err, "error running command `ci view %s`: %v", tc.cli, err) {
+			if tc.expectedErr(t, err, "error running command `ci view %s`: %v", tc.cli, err) {
 				assert.Empty(t, output.String())
 				assert.Equal(t, tc.expectedOutput, output.Stderr())
 			}
