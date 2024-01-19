@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"gitlab.com/gitlab-org/cli/internal/mcpannotations"
 
 	"gitlab.com/gitlab-org/cli/internal/api"
@@ -47,6 +48,7 @@ type options struct {
 	openInBrowser          bool
 	pipelineID             int
 	forMR                  bool
+	interactive            bool
 	titler                 *titler
 }
 
@@ -77,8 +79,8 @@ const (
 	Bridge
 )
 
-func logPageName(name string) string {
-	return "logs-" + name
+func logPageName(name string, id int) string {
+	return "logs-" + name + "-" + strconv.Itoa(id)
 }
 
 type ViewJob struct {
@@ -99,7 +101,7 @@ type ViewJob struct {
 }
 
 func (j ViewJob) logsPage() string {
-	return logPageName(j.Name)
+	return logPageName(j.Name, j.ID)
 }
 
 func ViewJobFromBridge(bridge *gitlab.Bridge) *ViewJob {
@@ -203,12 +205,16 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	pipelineCIView.Flags().BoolVarP(&opts.forMR, "mr", "m", false, "Check pipeline status for a MR. (Default is the current MR)")
 	pipelineCIView.Flags().BoolVarP(&opts.openInBrowser, "web", "w", false, "Open pipeline in a browser. Uses default browser, or browser specified in BROWSER variable.")
 	pipelineCIView.Flags().IntVarP(&opts.pipelineID, "pipelineid", "p", 0, "Check pipeline status for a specific pipeline ID.")
+	pipelineCIView.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Interactively choose pipeline to view from a list")
 	pipelineCIView.MarkFlagsMutuallyExclusive("branch", "pipelineid")
 
 	return pipelineCIView
 }
 
 func (o *options) complete(args []string) error {
+	if o.interactive {
+		return nil
+	}
 	if o.refName == "" {
 		if len(args) == 1 {
 			o.refName = args[0]
@@ -241,8 +247,16 @@ func (o *options) run(args []string) error {
 	var webURL string
 	var pipelineCreatedAt time.Time
 	var commit *gitlab.Commit
-
-	if o.forMR {
+	if o.interactive {
+		var pipeline *gitlab.PipelineInfo
+		commit, pipeline, err = choosePipeline(o.io, client, repo)
+		if err != nil {
+			return err
+		}
+		pipelineID = pipeline.ID
+		pipelineCreatedAt = *pipeline.CreatedAt
+		webURL = pipeline.WebURL
+	} else if o.forMR {
 		var mrIDStr string
 		var mrID int
 		if len(args) > 0 {
@@ -272,7 +286,7 @@ func (o *options) run(args []string) error {
 			ID:           pipeInfos[0].SHA,
 			LastPipeline: pipeInfos[0],
 		}
-		pipelineID = commit.LastPipeline.ID
+		pipelineID = pipeInfos[0].ID
 		webURL = pipeInfos[0].WebURL
 		pipelineCreatedAt = *pipeInfos[0].CreatedAt
 	} else if o.pipelineID > 0 {
@@ -344,12 +358,79 @@ func (o *options) run(args []string) error {
 		return utils.OpenInBrowser(webURL, browser)
 	}
 
-	p, _, err := client.Pipelines.GetPipeline(projectID, pipelineID)
-	if err != nil {
-		return fmt.Errorf("Can't get pipeline #%d info: %s", pipelineID, err)
+	var errLoop error
+	for errLoop == nil {
+		p, _, err := client.Pipelines.GetPipeline(projectID, pipelineID)
+		if err != nil {
+			errLoop = fmt.Errorf("Can't get pipeline #%d info: %s", pipelineID, err)
+			break
+		}
+		errLoop = drawView(o, commit, projectID, p.User.Name, client, pipelineID, pipelineCreatedAt)
+		if errLoop != nil {
+			return errLoop
+		}
+		if !o.interactive {
+			return nil
+		}
+		var pipeline *gitlab.PipelineInfo
+		commit, pipeline, errLoop = choosePipeline(o.io, client, repo)
+		if errLoop == nil {
+			pipelineID = pipeline.ID
+			pipelineCreatedAt = *pipeline.CreatedAt
+			webURL = pipeline.WebURL
+		}
 	}
-	pipelineUser := p.User
+	return errLoop
+}
 
+func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, repo glrepo.Interface) (*gitlab.Commit, *gitlab.PipelineInfo, error) {
+	l := &gitlab.ListProjectPipelinesOptions{}
+	l.Page = 1
+	l.PerPage = 30
+
+	pipes, _, err := apiClient.Pipelines.ListProjectPipelines(repo.FullName(), l, nil)
+	if len(pipes) == 0 {
+		return nil, nil, fmt.Errorf("no pipelines found")
+	}
+	pipeMap := make(map[string]*gitlab.PipelineInfo)
+	var pipeList []string
+	for _, pipe := range pipes {
+		var duration string
+		if pipe.CreatedAt != nil {
+			duration = "(" + utils.TimeToPrettyTimeAgo(*pipe.CreatedAt) + ")"
+		}
+
+		t := fmt.Sprintf("(%s) • #%d (%d) %s %s", pipe.Status, pipe.ID, pipe.IID, pipe.Ref, duration)
+		pipeList = append(pipeList, t)
+		pipeMap[t] = pipe
+	}
+	chosenPipeline := pipeList[0]
+	if !ios.PromptEnabled() {
+		return nil, nil, fmt.Errorf("interactive mode with no TTY")
+	}
+	err = ios.Select(context.Background(), &chosenPipeline, "Choose pipeline", pipeList)
+	if err != nil {
+		if !errors.Is(err, huh.ErrUserAborted) {
+			return nil, nil, errors.New("pipeline must be chosen")
+		}
+		return nil, nil, err
+	}
+	commit := &gitlab.Commit{
+		ID:           pipeMap[chosenPipeline].SHA,
+		LastPipeline: pipeMap[chosenPipeline],
+	}
+	return commit, pipeMap[chosenPipeline], nil
+}
+
+func drawView(
+	o *options,
+	commit *gitlab.Commit,
+	projectID string,
+	pipelineUser string,
+	client *gitlab.Client,
+	pipelineID int,
+	pipelineCreatedAt time.Time,
+) error {
 	root := tview.NewPages()
 	root.
 		SetBackgroundColor(tcell.ColorDefault).
@@ -359,7 +440,7 @@ func (o *options) run(args []string) error {
 		SetTitleColor(tcell.ColorDefault).
 		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s@%s) triggered %s by %s ",
 			pipelineID, projectID, commit.LastPipeline.Ref, commit.LastPipeline.SHA[0:7],
-			utils.TimeToPrettyTimeAgo(pipelineCreatedAt), pipelineUser.Name))
+			utils.TimeToPrettyTimeAgo(pipelineCreatedAt), pipelineUser))
 
 	jobsCh := make(chan []*ViewJob)
 	forceUpdateCh := make(chan bool)
@@ -589,7 +670,7 @@ func newAppState() *appState {
 }
 
 func (s appState) logsPage() string {
-	return logPageName(s.curJob.Name)
+	return logPageName(s.curJob.Name, s.curJob.ID)
 }
 
 // bracketEscaper wraps a writer and escapes square brackets for tview, but preserves ANSI escape sequences.

@@ -1317,6 +1317,7 @@ func runCommand(t *testing.T, rt http.RoundTripper, cli string) (*test.CmdOut, e
 	t.Helper()
 
 	ios, _, stdout, stderr := cmdtest.TestIOStreams(cmdtest.WithTestIOStreamsAsTTY(true))
+	ios.SetPrompt("true")
 	factory := cmdtest.NewTestFactory(ios,
 		cmdtest.WithGitLabClient(cmdtest.NewTestApiClient(t, &http.Client{Transport: rt}, "", glinstance.DefaultHostname).Lab()),
 	)
@@ -1402,6 +1403,7 @@ func TestCIView(t *testing.T) {
 		httpMocks []httpMock
 
 		expectedOutput string
+		expectedErr    func(t assert.TestingT, err error, msg string, args ...interface{}) bool
 	}{
 		{
 			name: "view ci pipeline on web for a given branch",
@@ -1425,6 +1427,7 @@ func TestCIView(t *testing.T) {
 					}`,
 				},
 			},
+			expectedErr:    assert.NoErrorf,
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/225 in your browser.\n",
 		},
 		{
@@ -1444,6 +1447,7 @@ func TestCIView(t *testing.T) {
 					}`,
 				},
 			},
+			expectedErr:    assert.NoErrorf,
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/5 in your browser.\n",
 		},
 		{
@@ -1467,6 +1471,7 @@ func TestCIView(t *testing.T) {
 					}]`,
 				},
 			},
+			expectedErr:    assert.NoErrorf,
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/8 in your browser.\n",
 		},
 		{
@@ -1490,7 +1495,31 @@ func TestCIView(t *testing.T) {
 					}`,
 				},
 			},
+			expectedErr:    assert.NoErrorf,
 			expectedOutput: "Opening gitlab.com/OWNER/REPO/-/pipelines/9 in your browser.\n",
+		},
+		{
+			name: "view ci pipeline on web interactively",
+			cli:  "--web --interactive",
+			httpMocks: []httpMock{
+				{
+					http.MethodGet,
+
+					"https://gitlab.com/api/v4/projects/OWNER%2FREPO/pipelines?page=1&per_page=30",
+					http.StatusOK,
+					`[
+					{
+						"id": 10,
+						"iid": 124,
+						"web_url": "https://gitlab.com/OWNER/REPO/-/pipelines/10",
+						"project_id": 322,
+						"name": "test-branch-interactive",
+						"created_at": "2025-10-28T16:52:39.000+01:00",
+						"sha": "102280f46b85522245fd8293eb810c2629c379bb"
+					}]`,
+				},
+			},
+			expectedErr: assert.Errorf,
 		},
 	}
 
@@ -1508,7 +1537,7 @@ func TestCIView(t *testing.T) {
 			output, err, restoreCmd := runCommand(t, fakeHTTP, tc.cli)
 			defer restoreCmd()
 
-			if assert.NoErrorf(t, err, "error running command `ci view %s`: %v", tc.cli, err) {
+			if tc.expectedErr(t, err, "error running command `ci view %s`: %v", tc.cli, err) {
 				assert.Empty(t, output.String())
 				assert.Equal(t, tc.expectedOutput, output.Stderr())
 			}
