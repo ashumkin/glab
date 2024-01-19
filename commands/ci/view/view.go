@@ -77,6 +77,14 @@ func (o *ViewOpts) Test() error {
 	return nil
 }
 
+func (o *ViewOpts) createCommitFromPipeInfo(info *gitlab.PipelineInfo) {
+	o.Commit = &gitlab.Commit{
+		ID:           info.SHA,
+		LastPipeline: info,
+	}
+	o.CommitSHA = o.Commit.ID
+}
+
 type ViewJobKind int64
 
 const (
@@ -196,22 +204,18 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("Cannot find pipeline by ID %d: %w", opts.PipelineID, err)
 				}
-				opts.Commit = &gitlab.Commit{
-					ID: pipeInfo.SHA,
-					LastPipeline: &gitlab.PipelineInfo{
-						ID:        pipeInfo.ID,
-						IID:       pipeInfo.IID,
-						ProjectID: pipeInfo.ProjectID,
-						Status:    pipeInfo.Status,
-						Source:    pipeInfo.Source,
-						Ref:       pipeInfo.Ref,
-						SHA:       pipeInfo.SHA,
-						WebURL:    pipeInfo.WebURL,
-						UpdatedAt: pipeInfo.UpdatedAt,
-						CreatedAt: pipeInfo.CreatedAt,
-					},
-				}
-				opts.CommitSHA = opts.Commit.ID
+				opts.createCommitFromPipeInfo(&gitlab.PipelineInfo{
+					ID:        pipeInfo.ID,
+					IID:       pipeInfo.IID,
+					ProjectID: pipeInfo.ProjectID,
+					Status:    pipeInfo.Status,
+					Source:    pipeInfo.Source,
+					Ref:       pipeInfo.Ref,
+					SHA:       pipeInfo.SHA,
+					WebURL:    pipeInfo.WebURL,
+					UpdatedAt: pipeInfo.UpdatedAt,
+					CreatedAt: pipeInfo.CreatedAt,
+				})
 			} else if len(args) == 1 {
 				opts.RefName = args[0]
 				opts.refNameIsSetExplicitly = true
@@ -245,11 +249,7 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				if len(pipeInfos) == 0 {
 					return fmt.Errorf("Cannot find pipelines for MR %d", mrID)
 				}
-				opts.Commit = &gitlab.Commit{
-					ID:           pipeInfos[0].SHA,
-					LastPipeline: pipeInfos[0],
-				}
-				opts.CommitSHA = opts.Commit.ID
+				opts.createCommitFromPipeInfo(pipeInfos[0])
 			} else if opts.refNameIsSetExplicitly {
 				var lastPipeline *gitlab.PipelineInfo
 				lastPipeline, err = api.GetLastPipelineForRef(opts.ApiClient, opts.ProjectID, opts.RefName)
@@ -259,11 +259,7 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				if lastPipeline == nil {
 					return fmt.Errorf("Can't find pipeline for the ref: %s", opts.RefName)
 				}
-				opts.Commit = &gitlab.Commit{
-					ID:           lastPipeline.SHA,
-					LastPipeline: lastPipeline,
-				}
-				opts.CommitSHA = opts.Commit.ID
+				opts.createCommitFromPipeInfo(lastPipeline)
 			} else if opts.PipelineID == -1 {
 				opts.Commit, err = api.GetCommit(opts.ApiClient, opts.ProjectID, opts.RefName)
 				if err != nil {
