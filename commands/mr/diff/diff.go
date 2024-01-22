@@ -94,17 +94,21 @@ func diffRun(opts *DiffOptions) error {
 
 	diffOut := &bytes.Buffer{}
 	for _, diff := range diffs {
-		// the diffs are not included in the GetMergeRequestDiffVersions so we query for each diff version
-		diffVersion, _, err := apiClient.MergeRequests.GetSingleMergeRequestDiffVersion(baseRepo.FullName(), mr.IID, diff.ID, &gitlab.GetSingleMergeRequestDiffVersionOptions{})
-		if err != nil {
-			return fmt.Errorf("could not find merge request diff: %w", err)
-		}
-		for _, diffLine := range diffVersion.Diffs {
-			// output the unified diff header
-			diffOut.WriteString("--- " + diffLine.OldPath + "\n")
-			diffOut.WriteString("+++ " + diffLine.NewPath + "\n")
+		// show the diff for the MR's commit
+		if mr.SHA == diff.HeadCommitSHA {
+			diffOut.WriteString("index " + diff.StartCommitSHA + ".." + diff.HeadCommitSHA + "\n")
+			// the diffs are not included in the GetMergeRequestDiffVersions so we query for each diff version
+			diffVersion, _, err := apiClient.MergeRequests.GetSingleMergeRequestDiffVersion(baseRepo.FullName(), mr.IID, diff.ID, &gitlab.GetSingleMergeRequestDiffVersionOptions{})
+			if err != nil {
+				return fmt.Errorf("could not find merge request diff: %w", err)
+			}
+			for _, diffLine := range diffVersion.Diffs {
+				// output the unified diff header
+				diffOut.WriteString("--- " + diffLine.OldPath + "\n")
+				diffOut.WriteString("+++ " + diffLine.NewPath + "\n")
 
-			diffOut.WriteString(diffLine.Diff)
+				diffOut.WriteString(diffLine.Diff)
+			}
 		}
 	}
 
