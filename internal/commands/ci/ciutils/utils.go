@@ -109,7 +109,19 @@ func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid an
 			return nil
 		}
 		once.Do(func() {
-			fmt.Fprintf(w, "Showing logs for %s job #%d.\n", job.Name, job.ID)
+			var duration string
+			if job.StartedAt != nil {
+				duration = ", " + utils.TimeToPrettyTimeAgo(*job.StartedAt)
+			}
+			fmt.Fprintf(
+				w,
+				"Showing logs for %s job #%d (started by %s at %s%s)\n",
+				job.Name,
+				job.ID,
+				job.User.Name,
+				job.StartedAt,
+				duration,
+			)
 		})
 		trace, _, err := apiClient.Jobs.GetTraceFile(pid, jobId)
 		if err != nil || trace == nil {
@@ -125,6 +137,9 @@ func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid an
 		if job.Status == "success" ||
 			job.Status == "failed" ||
 			job.Status == "cancelled" {
+			if job.Status == "success" {
+				fmt.Fprintf(w, "Job finished at %s", job.FinishedAt)
+			}
 			return nil
 		}
 	}
