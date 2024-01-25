@@ -427,6 +427,7 @@ func TestTraceJob(t *testing.T) {
 						ID:     1122,
 						Name:   "lint",
 						Status: "success",
+						User:   &gitlab.User{Name: "gitlab-user"},
 					}, nil, nil)
 
 				tc.MockJobs.EXPECT().
@@ -475,6 +476,7 @@ func TestTraceJob(t *testing.T) {
 						ID:     1122,
 						Name:   "lint",
 						Status: "success",
+						User:   &gitlab.User{Name: "gitlab-user"},
 					}, nil, nil)
 
 				forbiddenResponse := &gitlab.Response{Response: &http.Response{StatusCode: http.StatusForbidden}}

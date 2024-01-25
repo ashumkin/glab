@@ -122,8 +122,14 @@ func PrettyTimeAgo(ago time.Duration) string {
 	return fmtDuration(int(ago.Hours()/24/365), "year")
 }
 
+var DefaultNow = func() time.Time {
+	return time.Now()
+}
+
+var Now = DefaultNow
+
 func TimeToPrettyTimeAgo(d time.Time) string {
-	now := time.Now()
+	now := Now()
 	ago := now.Sub(d)
 	return PrettyTimeAgo(ago)
 }
