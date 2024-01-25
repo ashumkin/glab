@@ -25,8 +25,6 @@ import (
 	"github.com/xanzy/go-gitlab"
 )
 
-var once sync.Once
-
 func makeHyperlink(s *iostreams.IOStreams, pipeline *gitlab.PipelineInfo) string {
 	return s.Hyperlink(fmt.Sprintf("%d", pipeline.ID), pipeline.WebURL)
 }
@@ -87,7 +85,10 @@ func RunTraceForPipelineJob(ctx context.Context, apiClient *gitlab.Client, w io.
 }
 
 func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid interface{}, jobId int) error {
-	var offset int64
+	var (
+		offset int64
+		once   sync.Once
+	)
 	fmt.Fprintln(w, "Getting job trace...")
 	for range time.NewTicker(time.Second * 3).C {
 		if ctx.Err() == context.Canceled {
@@ -110,6 +111,19 @@ func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid in
 		}
 		once.Do(func() {
 			fmt.Fprintf(w, "Showing logs for %s job #%d.\n", job.Name, job.ID)
+			var duration string
+			if job.StartedAt != nil {
+				duration = ", " + utils.TimeToPrettyTimeAgo(*job.StartedAt)
+			}
+			fmt.Fprintf(
+				w,
+				"Showing logs for %s job #%d (started by %s at %s%s)\n",
+				job.Name,
+				job.ID,
+				job.User.Name,
+				job.StartedAt,
+				duration,
+			)
 		})
 		trace, _, err := apiClient.Jobs.GetTraceFile(pid, jobId)
 		if err != nil || trace == nil {
@@ -125,6 +139,9 @@ func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid in
 		if job.Status == "success" ||
 			job.Status == "failed" ||
 			job.Status == "cancelled" {
+			if job.Status == "success" {
+				fmt.Fprintf(w, "Job finished at %s", job.FinishedAt)
+			}
 			return nil
 		}
 	}
