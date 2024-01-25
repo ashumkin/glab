@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gitlab.com/gitlab-org/cli/internal/utils"
 	"go.uber.org/mock/gomock"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
@@ -17,6 +19,11 @@ import (
 
 	"gitlab.com/gitlab-org/cli/internal/testing/cmdtest"
 )
+
+func parseTime(s string) *time.Time {
+	t, _ := time.Parse(time.RFC3339, s)
+	return &t
+}
 
 func TestCiTrace(t *testing.T) {
 	t.Parallel()
@@ -35,18 +42,25 @@ func TestCiTrace(t *testing.T) {
 		setupMock     func(tc *gitlabtesting.TestClient)
 	}
 
+	utils.Now = func() time.Time {
+		return *parseTime("2024-08-08T03:25:00.000Z")
+	}
+
 	tests := []testCase{
 		{
 			name:        "when trace for job-id is requested",
 			args:        "1122",
-			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122.\nLorem ipsum",
+			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nLorem ipsum\nJob finished at 2024-07-08 01:24:05 +0000 UTC",
 			setupMock: func(tc *gitlabtesting.TestClient) {
 				tc.MockJobs.EXPECT().
 					GetJob("OWNER/REPO", int64(1122), gomock.Any()).
 					Return(&gitlab.Job{
-						ID:     1122,
-						Name:   "lint",
-						Status: "success",
+						ID:         1122,
+						Name:       "lint",
+						Status:     "success",
+						User:       &gitlab.User{Name: "gitlab-user"},
+						StartedAt:  parseTime("2024-07-08T01:23:04.311Z"),
+						FinishedAt: parseTime("2024-07-08T01:24:05.000Z"),
 					}, nil, nil)
 
 				tc.MockJobs.EXPECT().
@@ -58,14 +72,16 @@ func TestCiTrace(t *testing.T) {
 			name:          "when trace for job-id is requested and getTrace throws error",
 			args:          "1122",
 			expectedError: "failed to find job",
-			expectedOut:   "\nGetting job trace...\nShowing logs for lint job #1122.\n",
+			expectedOut:   "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\n",
 			setupMock: func(tc *gitlabtesting.TestClient) {
 				tc.MockJobs.EXPECT().
 					GetJob("OWNER/REPO", int64(1122), gomock.Any()).
 					Return(&gitlab.Job{
-						ID:     1122,
-						Name:   "lint",
-						Status: "success",
+						ID:        1122,
+						Name:      "lint",
+						Status:    "success",
+						User:      &gitlab.User{Name: "gitlab-user"},
+						StartedAt: parseTime("2024-07-08T01:23:04.311Z"),
 					}, nil, nil)
 
 				forbiddenResponse := &gitlab.Response{Response: &http.Response{StatusCode: http.StatusForbidden}}
@@ -89,7 +105,7 @@ func TestCiTrace(t *testing.T) {
 		{
 			name:        "when trace for job-name is requested",
 			args:        "lint -b main -p 123",
-			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122.\nLorem ipsum",
+			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nLorem ipsum\nJob finished at 2024-07-08 01:24:05 +0000 UTC",
 			setupMock: func(tc *gitlabtesting.TestClient) {
 				tc.MockJobs.EXPECT().
 					ListPipelineJobs("OWNER/REPO", int64(123), gomock.Any(), gomock.Any()).
@@ -109,9 +125,12 @@ func TestCiTrace(t *testing.T) {
 				tc.MockJobs.EXPECT().
 					GetJob("OWNER/REPO", int64(1122), gomock.Any()).
 					Return(&gitlab.Job{
-						ID:     1122,
-						Name:   "lint",
-						Status: "success",
+						ID:         1122,
+						Name:       "lint",
+						Status:     "success",
+						User:       &gitlab.User{Name: "gitlab-user"},
+						StartedAt:  parseTime("2024-07-08T01:23:04.311Z"),
+						FinishedAt: parseTime("2024-07-08T01:24:05.000Z"),
 					}, nil, nil)
 
 				tc.MockJobs.EXPECT().
@@ -122,7 +141,7 @@ func TestCiTrace(t *testing.T) {
 		{
 			name:        "when trace for job-name and last pipeline is requested",
 			args:        "lint -b main",
-			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122.\nLorem ipsum",
+			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nLorem ipsum\nJob finished at 2024-07-08 01:24:05 +0000 UTC",
 			setupMock: func(tc *gitlabtesting.TestClient) {
 				// GetPipelineWithFallback tries GetLatestPipeline first
 				tc.MockPipelines.EXPECT().
@@ -156,9 +175,12 @@ func TestCiTrace(t *testing.T) {
 				tc.MockJobs.EXPECT().
 					GetJob("OWNER/REPO", int64(1122), gomock.Any()).
 					Return(&gitlab.Job{
-						ID:     1122,
-						Name:   "lint",
-						Status: "success",
+						ID:         1122,
+						Name:       "lint",
+						Status:     "success",
+						User:       &gitlab.User{Name: "gitlab-user"},
+						StartedAt:  parseTime("2024-07-08T01:23:04.311Z"),
+						FinishedAt: parseTime("2024-07-08T01:24:05.000Z"),
 					}, nil, nil)
 
 				tc.MockJobs.EXPECT().
