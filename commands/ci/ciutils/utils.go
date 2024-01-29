@@ -98,7 +98,7 @@ func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid in
 			return errors.Wrap(err, "failed to find job")
 		}
 		switch job.Status {
-		case "pending":
+		case "pending", "created":
 			fmt.Fprintf(w, "%s is pending... waiting for job to start.\n", job.Name)
 			continue
 		case "manual":
@@ -106,6 +106,7 @@ func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid in
 			continue
 		case "skipped":
 			fmt.Fprintf(w, "%s has been skipped.\n", job.Name)
+			return nil
 		}
 		once.Do(func() {
 			fmt.Fprintf(w, "Showing logs for %s job #%d.\n", job.Name, job.ID)
