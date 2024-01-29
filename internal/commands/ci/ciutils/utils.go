@@ -209,7 +209,7 @@ func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid an
 			return fmt.Errorf("failed to find job: %w", err)
 		}
 		switch job.Status {
-		case string(gitlab.Pending):
+		case string(gitlab.Pending), string(gitlab.Created):
 			fmt.Fprintf(w, "%s is pending... waiting for job to start.\n", job.Name) //nolint:forbidigo // w is a generic io.Writer, not always StdOut/StdErr
 			continue
 		case string(gitlab.Manual):
