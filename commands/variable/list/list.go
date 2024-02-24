@@ -24,6 +24,8 @@ type ListOpts struct {
 	ValueSet     bool
 	Group        string
 	OutputFormat string
+	Page         int
+	PerPage      int
 }
 
 func NewCmdSet(f *cmdutils.Factory, runE func(opts *ListOpts) error) *cobra.Command {
@@ -69,6 +71,8 @@ func NewCmdSet(f *cmdutils.Factory, runE func(opts *ListOpts) error) *cobra.Comm
 		"Select a group or subgroup. Ignored if a repository argument is set.",
 	)
 	cmd.Flags().StringVarP(&opts.OutputFormat, "output", "F", "text", "Format output as: text, json.")
+	cmd.Flags().IntVarP(&opts.Page, "page", "p", 1, "Page number.")
+	cmd.Flags().IntVarP(&opts.PerPage, "per-page", "P", 100, "Number of items to list per page.")
 
 	return cmd
 }
@@ -90,7 +94,10 @@ func listRun(opts *ListOpts) error {
 
 	if opts.Group != "" {
 		opts.IO.Logf("Listing variables for the %s group:\n\n", color.Bold(opts.Group))
-		createVarOpts := &gitlab.ListGroupVariablesOptions{}
+		createVarOpts := &gitlab.ListGroupVariablesOptions{
+			Page:    opts.Page,
+			PerPage: opts.PerPage,
+		}
 		variables, err := api.ListGroupVariables(httpClient, opts.Group, createVarOpts)
 		if err != nil {
 			return err
@@ -106,7 +113,10 @@ func listRun(opts *ListOpts) error {
 		}
 	} else {
 		opts.IO.Logf("Listing variables for the %s project:\n\n", color.Bold(repo.FullName()))
-		createVarOpts := &gitlab.ListProjectVariablesOptions{}
+		createVarOpts := &gitlab.ListProjectVariablesOptions{
+			Page:    opts.Page,
+			PerPage: opts.PerPage,
+		}
 		variables, err := api.ListProjectVariables(httpClient, repo.FullName(), createVarOpts)
 		if err != nil {
 			return err
