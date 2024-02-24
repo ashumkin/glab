@@ -88,7 +88,7 @@ func listRun(opts *ListOpts) error {
 	}
 
 	table := tableprinter.NewTablePrinter()
-	table.AddRow("KEY", "PROTECTED", "MASKED", "EXPANDED", "SCOPE", "DESCRIPTION")
+	table.AddRow("KEY", "TYPE", "PROTECTED", "MASKED", "EXPANDED", "SCOPE", "DESCRIPTION")
 
 	if opts.Group != "" {
 		opts.IO.Logf("Listing variables for the %s group:\n\n", color.Bold(opts.Group))
@@ -103,7 +103,7 @@ func listRun(opts *ListOpts) error {
 
 		} else {
 			for _, variable := range variables {
-				table.AddRow(variable.Key, variable.Protected, variable.Masked, !variable.Raw, variable.EnvironmentScope, variable.Description)
+				table.AddRow(variable.Key, string(variable.VariableType), variable.Protected, variable.Masked, !variable.Raw, variable.EnvironmentScope, variable.Description)
 			}
 		}
 	} else {
@@ -122,7 +122,7 @@ func listRun(opts *ListOpts) error {
 			fmt.Fprintln(opts.IO.StdOut, string(varListJSON))
 		} else {
 			for _, variable := range variables {
-				table.AddRow(variable.Key, variable.Protected, variable.Masked, !variable.Raw, variable.EnvironmentScope, variable.Description)
+				table.AddRow(variable.Key, string(variable.VariableType), variable.Protected, variable.Masked, !variable.Raw, variable.EnvironmentScope, variable.Description)
 			}
 		}
 	}
