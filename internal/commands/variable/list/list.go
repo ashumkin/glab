@@ -108,11 +108,10 @@ func (o *options) run() error {
 		if o.outputFormat == "json" {
 			varListJSON, _ := json.Marshal(variables)
 			fmt.Fprintln(o.io.StdOut, string(varListJSON))
-
 		} else {
-			table.AddRow("KEY", "PROTECTED", "MASKED", "HIDDEN", "EXPANDED", "SCOPE", "DESCRIPTION")
+			table.AddRow("KEY", "TYPE", "PROTECTED", "MASKED", "HIDDEN", "EXPANDED", "SCOPE", "DESCRIPTION")
 			for _, variable := range variables {
-				table.AddRow(variable.Key, variable.Protected, variable.Masked, variable.Hidden, !variable.Raw, variable.EnvironmentScope, variable.Description)
+				table.AddRow(variable.Key, string(variable.VariableType), variable.Protected, variable.Masked, variable.Hidden, !variable.Raw, variable.EnvironmentScope, variable.Description)
 			}
 		}
 	} else if o.instance {
@@ -127,9 +126,9 @@ func (o *options) run() error {
 			fmt.Fprintln(o.io.StdOut, string(varListJSON))
 
 		} else {
-			table.AddRow("KEY", "PROTECTED", "MASKED", "EXPANDED", "SCOPE", "DESCRIPTION")
+			table.AddRow("KEY", "TYPE", "PROTECTED", "MASKED", "EXPANDED", "SCOPE", "DESCRIPTION")
 			for _, variable := range variables {
-				table.AddRow(variable.Key, variable.Protected, variable.Masked, !variable.Raw, "", variable.Description)
+				table.AddRow(variable.Key, string(variable.VariableType), variable.Protected, variable.Masked, !variable.Raw, "", variable.Description)
 			}
 		}
 	} else {
@@ -147,9 +146,9 @@ func (o *options) run() error {
 			varListJSON, _ := json.Marshal(variables)
 			fmt.Fprintln(o.io.StdOut, string(varListJSON))
 		} else {
-			table.AddRow("KEY", "PROTECTED", "MASKED", "HIDDEN", "EXPANDED", "SCOPE", "DESCRIPTION")
+			table.AddRow("KEY", "TYPE", "PROTECTED", "MASKED", "HIDDEN", "EXPANDED", "SCOPE", "DESCRIPTION")
 			for _, variable := range variables {
-				table.AddRow(variable.Key, variable.Protected, variable.Masked, variable.Hidden, !variable.Raw, variable.EnvironmentScope, variable.Description)
+				table.AddRow(variable.Key, string(variable.VariableType), variable.Protected, variable.Masked, variable.Hidden, !variable.Raw, variable.EnvironmentScope, variable.Description)
 			}
 		}
 	}
