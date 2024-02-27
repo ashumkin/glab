@@ -98,11 +98,6 @@ func exportRun(opts *ExportOpts) error {
 		return err
 	}
 
-	repo, err := opts.BaseRepo()
-	if err != nil {
-		return err
-	}
-
 	if opts.Group != "" {
 		createVarOpts := &gitlab.ListGroupVariablesOptions{Page: opts.Page, PerPage: opts.PerPage}
 		groupVariables, err := api.ListGroupVariables(httpClient, opts.Group, createVarOpts)
@@ -117,22 +112,24 @@ func exportRun(opts *ExportOpts) error {
 		}
 
 		return printGroupVariables(groupVariables, opts, out)
-
-	} else {
-		createVarOpts := &gitlab.ListProjectVariablesOptions{Page: opts.Page, PerPage: opts.PerPage}
-		projectVariables, err := api.ListProjectVariables(httpClient, repo.FullName(), createVarOpts)
-		if err != nil {
-			return err
-		}
-
-		opts.IO.Logf("Exporting variables from the %s project:\n", repo.FullName())
-
-		if len(projectVariables) == 0 {
-			return nil
-		}
-
-		return printProjectVariables(projectVariables, opts, out)
 	}
+	repo, err := opts.BaseRepo()
+	if err != nil {
+		return err
+	}
+	createVarOpts := &gitlab.ListProjectVariablesOptions{Page: opts.Page, PerPage: opts.PerPage}
+	projectVariables, err := api.ListProjectVariables(httpClient, repo.FullName(), createVarOpts)
+	if err != nil {
+		return err
+	}
+
+	opts.IO.Logf("Exporting variables from the %s project:\n", repo.FullName())
+
+	if len(projectVariables) == 0 {
+		return nil
+	}
+
+	return printProjectVariables(projectVariables, opts, out)
 }
 
 func matchesScope(varScope, optScope string) bool {
