@@ -84,11 +84,6 @@ func listRun(opts *ListOpts) error {
 		return err
 	}
 
-	repo, err := opts.BaseRepo()
-	if err != nil {
-		return err
-	}
-
 	table := tableprinter.NewTablePrinter()
 	table.AddRow("KEY", "TYPE", "PROTECTED", "MASKED", "EXPANDED", "SCOPE")
 
@@ -112,6 +107,11 @@ func listRun(opts *ListOpts) error {
 			}
 		}
 	} else {
+		repo, err := opts.BaseRepo()
+		if err != nil {
+			return err
+		}
+
 		opts.IO.Logf("Listing variables for the %s project:\n\n", color.Bold(repo.FullName()))
 		createVarOpts := &gitlab.ListProjectVariablesOptions{
 			Page:    opts.Page,
