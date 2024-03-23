@@ -469,6 +469,7 @@ func inputCapture(
 				modal := tview.NewModal().
 					SetText(fmt.Sprintf("The job %s is not retriable", curJob.Name)).
 					AddButtons([]string{"OK"}).
+					SetBackgroundColor(tcell.ColorOrangeRed).
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 						modalVisible = false
 						root.RemovePage("ok")
@@ -580,47 +581,60 @@ func inputCapture(
 			var manualJobs []*ViewJob
 			var manualJobNames []string
 			for _, j := range jobs {
-				if j.Status == "manual" && j.Stage == curJob.Stage {
+				if (j.Status == "manual" || j.Status == "canceled") && j.Stage == curJob.Stage {
 					manualJobs = append(manualJobs, j)
 					manualJobNames = append(manualJobNames, j.Name)
 				}
 			}
-			modal := tview.NewModal().
-				SetText(
-					fmt.Sprintf("Are you sure you want to all manual jobs in stage %s:\n%s\n?",
-						curJob.Stage, strings.Join(manualJobNames, "\n"))).
-				AddButtons([]string{"✘ No", "✔ Yes"}).
-				SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-					modalVisible = false
-					root.RemovePage("yesno")
-					if buttonLabel != "✔ Yes" {
-						app.ForceDraw()
-						return
-					}
-					for _, j := range manualJobs {
-						root.RemovePage("logs-" + j.Name)
-					}
-					app.ForceDraw()
-
-					var job *gitlab.Job
-					for _, j := range manualJobs {
-						var err error
-						job, err = api.PlayOrRetryJobs(
-							opts.ApiClient,
-							opts.ProjectID,
-							j.ID,
-							j.Status,
-						)
-						if err != nil {
-							app.Stop()
-							log.Fatal(err)
+			var modal *tview.Modal
+			if len(manualJobNames) > 0 {
+				modal = tview.NewModal().
+					SetText(
+						fmt.Sprintf("Are you sure you want to all manual/canceled jobs in stage %s:\n%s\n?",
+							curJob.Stage, strings.Join(manualJobNames, "\n"))).
+					AddButtons([]string{"✘ No", "✔ Yes"}).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						modalVisible = false
+						root.RemovePage("yesno")
+						if buttonLabel != "✔ Yes" {
+							app.ForceDraw()
+							return
 						}
-					}
-					if job != nil {
-						curJob = ViewJobFromJob(job)
+						for _, j := range manualJobs {
+							root.RemovePage("logs-" + j.Name)
+						}
 						app.ForceDraw()
-					}
-				})
+
+						var job *gitlab.Job
+						for _, j := range manualJobs {
+							var err error
+							job, err = api.PlayOrRetryJobs(
+								opts.ApiClient,
+								opts.ProjectID,
+								j.ID,
+								j.Status,
+							)
+							if err != nil {
+								app.Stop()
+								log.Fatal(err)
+							}
+						}
+						if job != nil {
+							curJob = ViewJobFromJob(job)
+							app.ForceDraw()
+						}
+					})
+			} else {
+				modal = tview.NewModal().
+					SetText(fmt.Sprintf("There are no runnable jobs in the stage %s", curJob.Stage)).
+					AddButtons([]string{"✔ OK"}).
+					SetBackgroundColor(tcell.ColorOrangeRed).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						modalVisible = false
+						root.RemovePage("yesno")
+						app.ForceDraw()
+					})
+			}
 			root.AddAndSwitchToPage("yesno", modal, false)
 			inputCh <- struct{}{}
 			app.ForceDraw()
