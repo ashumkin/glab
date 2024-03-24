@@ -336,6 +336,9 @@ func (o *options) run(args []string) error {
 		SetBackgroundColor(tcell.ColorDefault).
 		SetBorderPadding(1, 1, 2, 2).
 		SetBorder(true).
+		SetBorderStyle(tcell.StyleDefault).
+		SetBackgroundColor(tcell.ColorDefault).
+		SetTitleColor(tcell.ColorDefault).
 		SetTitle(fmt.Sprintf(" Pipeline #%d (%s) triggered %s by %s ", commit.LastPipeline.ID, projectID, utils.TimeToPrettyTimeAgo(*commit.LastPipeline.CreatedAt), pipelineUser.Name))
 
 	boxes = make(map[string]*tview.TextView)
@@ -836,9 +839,12 @@ func jobsView(
 			tv := tview.NewTextView()
 			tv.
 				SetDynamicColors(true).
+				SetTextColor(tcell.ColorDefault).
 				SetBackgroundColor(tcell.ColorDefault).
 				SetBorderPadding(0, 0, 1, 1).
 				SetBorder(true).
+				SetBorderStyle(tcell.StyleDefault).
+				SetTitleColor(tcell.ColorDefault).
 				SetTitle(" " + curJob.Name + " ").
 				SetTitleAlign(tview.AlignLeft)
 
@@ -985,8 +991,11 @@ func box(root *tview.Pages, key string, x, y, w, h int) *tview.TextView {
 	if !ok {
 		b = tview.NewTextView()
 		b.
+			SetTextStyle(tcell.StyleDefault).
 			SetBackgroundColor(tcell.ColorDefault).
-			SetBorder(true)
+			SetBorder(true).
+			SetBorderStyle(tcell.StyleDefault).
+			SetTitleColor(tcell.ColorDefault)
 		boxes[key] = b
 	}
 	b.SetRect(x, y, w, h)
