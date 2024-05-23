@@ -50,7 +50,7 @@ func TestCiTrace(t *testing.T) {
 		{
 			name:        "when trace for job-id is requested",
 			args:        "1122",
-			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nLorem ipsum\nJob finished at 2024-07-08 01:24:05 +0000 UTC",
+			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nWeb URL: https://pipeline-url/\nLorem ipsum\nJob finished at 2024-07-08 01:24:05 +0000 UTC",
 			setupMock: func(tc *gitlabtesting.TestClient) {
 				tc.MockJobs.EXPECT().
 					GetJob("OWNER/REPO", int64(1122), gomock.Any()).
@@ -61,6 +61,7 @@ func TestCiTrace(t *testing.T) {
 						User:       &gitlab.User{Name: "gitlab-user"},
 						StartedAt:  parseTime("2024-07-08T01:23:04.311Z"),
 						FinishedAt: parseTime("2024-07-08T01:24:05.000Z"),
+						WebURL:     "https://pipeline-url/",
 					}, nil, nil)
 
 				tc.MockJobs.EXPECT().
@@ -72,7 +73,7 @@ func TestCiTrace(t *testing.T) {
 			name:          "when trace for job-id is requested and getTrace throws error",
 			args:          "1122",
 			expectedError: "failed to find job",
-			expectedOut:   "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\n",
+			expectedOut:   "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nWeb URL: https://pipeline-url/\n",
 			setupMock: func(tc *gitlabtesting.TestClient) {
 				tc.MockJobs.EXPECT().
 					GetJob("OWNER/REPO", int64(1122), gomock.Any()).
@@ -82,6 +83,7 @@ func TestCiTrace(t *testing.T) {
 						Status:    "success",
 						User:      &gitlab.User{Name: "gitlab-user"},
 						StartedAt: parseTime("2024-07-08T01:23:04.311Z"),
+					WebURL:     "https://pipeline-url/",
 					}, nil, nil)
 
 				forbiddenResponse := &gitlab.Response{Response: &http.Response{StatusCode: http.StatusForbidden}}
@@ -105,7 +107,7 @@ func TestCiTrace(t *testing.T) {
 		{
 			name:        "when trace for job-name is requested",
 			args:        "lint -b main -p 123",
-			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nLorem ipsum\nJob finished at 2024-07-08 01:24:05 +0000 UTC",
+			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nWeb URL: https://pipeline-url/\nLorem ipsum\nJob finished at 2024-07-08 01:24:05 +0000 UTC",
 			setupMock: func(tc *gitlabtesting.TestClient) {
 				tc.MockJobs.EXPECT().
 					ListPipelineJobs("OWNER/REPO", int64(123), gomock.Any(), gomock.Any()).
@@ -131,6 +133,7 @@ func TestCiTrace(t *testing.T) {
 						User:       &gitlab.User{Name: "gitlab-user"},
 						StartedAt:  parseTime("2024-07-08T01:23:04.311Z"),
 						FinishedAt: parseTime("2024-07-08T01:24:05.000Z"),
+						WebURL:     "https://pipeline-url/",
 					}, nil, nil)
 
 				tc.MockJobs.EXPECT().
@@ -141,7 +144,7 @@ func TestCiTrace(t *testing.T) {
 		{
 			name:        "when trace for job-name and last pipeline is requested",
 			args:        "lint -b main",
-			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nLorem ipsum\nJob finished at 2024-07-08 01:24:05 +0000 UTC",
+			expectedOut: "\nGetting job trace...\nShowing logs for lint job #1122 (started by gitlab-user at 2024-07-08 01:23:04.311 +0000 UTC, about 1 month ago).\nWeb URL: https://pipeline-url/\nLorem ipsum\nJob finished at 2024-07-08 01:24:05 +0000 UTC",
 			setupMock: func(tc *gitlabtesting.TestClient) {
 				// GetPipelineWithFallback tries GetLatestPipeline first
 				tc.MockPipelines.EXPECT().
@@ -181,6 +184,7 @@ func TestCiTrace(t *testing.T) {
 						User:       &gitlab.User{Name: "gitlab-user"},
 						StartedAt:  parseTime("2024-07-08T01:23:04.311Z"),
 						FinishedAt: parseTime("2024-07-08T01:24:05.000Z"),
+						WebURL:     "https://pipeline-url/",
 					}, nil, nil)
 
 				tc.MockJobs.EXPECT().
