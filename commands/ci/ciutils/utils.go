@@ -117,12 +117,13 @@ func runTrace(ctx context.Context, apiClient *gitlab.Client, w io.Writer, pid in
 			}
 			fmt.Fprintf(
 				w,
-				"Showing logs for %s job #%d (started by %s at %s%s)\n",
+				"Showing logs for %s job #%d (started by %s at %s%s)\nWeb URL: %s\n",
 				job.Name,
 				job.ID,
 				job.User.Name,
 				job.StartedAt,
 				duration,
+				job.WebURL,
 			)
 		})
 		trace, _, err := apiClient.Jobs.GetTraceFile(pid, jobId)
