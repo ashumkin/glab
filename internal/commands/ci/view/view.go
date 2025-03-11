@@ -945,6 +945,7 @@ func jobsView(
 			b.SetBorderColor(tcell.ColorGrey)
 			statChar = '■'
 		case string(gitlab.Canceled):
+			b.SetBorderColor(tcell.ColorGrey)
 			statChar = 'Ø'
 		case string(gitlab.Skipped):
 			statChar = '»'
