@@ -1117,7 +1117,7 @@ func link(
 		hline(screen, x1+w, y2+h/2, dx-w)
 		if dy != 0 {
 			// dy != 0 means the last stage had multiple jobs
-			screen.SetContent(x1+w+p-1, y2+h/2, '╦', nil, tcell.StyleDefault)
+			screen.SetContent(x1+w+p-1, y2+h/2, '┬', nil, tcell.StyleDefault)
 		}
 		return
 	}
@@ -1126,29 +1126,29 @@ func link(
 	// left of view
 	if !firstStage {
 		s, _, _ := screen.Get(x2-p, y1+h/2)
-		if r, _ := utf8.DecodeRuneInString(s); r == '╚' {
-			screen.SetContent(x2-p, y1+h/2, '╠', nil, tcell.StyleDefault)
+		if r, _ := utf8.DecodeRuneInString(s); r == '╰' {
+			screen.SetContent(x2-p, y1+h/2, '├', nil, tcell.StyleDefault)
 		} else {
-			screen.SetContent(x2-p, y1+h/2, '╦', nil, tcell.StyleDefault)
+			screen.SetContent(x2-p, y1+h/2, '┬', nil, tcell.StyleDefault)
 		}
 
 		for i := 1; i < p; i++ {
-			screen.SetContent(x2-i, y2+h/2, '═', nil, tcell.StyleDefault)
+			screen.SetContent(x2-i, y2+h/2, '─', nil, tcell.StyleDefault)
 		}
-		screen.SetContent(x2-p, y2+h/2, '╚', nil, tcell.StyleDefault)
+		screen.SetContent(x2-p, y2+h/2, '╰', nil, tcell.StyleDefault)
 
 		vline(screen, x2-p, y1+h-1, dy-1)
 	}
 	// right of view
 	if !lastStage {
 		s, _, _ := screen.Get(x2+w+p-1, y1+h/2)
-		if r, _ := utf8.DecodeRuneInString(s); r == '┛' {
-			screen.SetContent(x2+w+p-1, y1+h/2, '╣', nil, tcell.StyleDefault)
+		if r, _ := utf8.DecodeRuneInString(s); r == '╯' {
+			screen.SetContent(x2+w+p-1, y1+h/2, '┤', nil, tcell.StyleDefault)
 		}
 		for i := range p - 1 {
-			screen.SetContent(x2+w+i, y2+h/2, '═', nil, tcell.StyleDefault)
+			screen.SetContent(x2+w+i, y2+h/2, '─', nil, tcell.StyleDefault)
 		}
-		screen.SetContent(x2+w+p-1, y2+h/2, '╝', nil, tcell.StyleDefault)
+		screen.SetContent(x2+w+p-1, y2+h/2, '╯', nil, tcell.StyleDefault)
 
 		vline(screen, x2+w+p-1, y1+h-1, dy-1)
 	}
@@ -1156,13 +1156,13 @@ func link(
 
 func hline(screen tcell.Screen, x, y, l int) {
 	for i := range l {
-		screen.SetContent(x+i, y, '═', nil, tcell.StyleDefault)
+		screen.SetContent(x+i, y, '─', nil, tcell.StyleDefault)
 	}
 }
 
 func vline(screen tcell.Screen, x, y, l int) {
 	for i := range l {
-		screen.SetContent(x, y+i, '║', nil, tcell.StyleDefault)
+		screen.SetContent(x, y+i, '│', nil, tcell.StyleDefault)
 	}
 }
 
