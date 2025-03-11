@@ -940,6 +940,7 @@ func jobsView(
 			b.SetBorderColor(tcell.ColorGrey)
 			statChar = '■'
 		case "canceled":
+			b.SetBorderColor(tcell.ColorGrey)
 			statChar = 'Ø'
 		case "skipped":
 			statChar = '»'
