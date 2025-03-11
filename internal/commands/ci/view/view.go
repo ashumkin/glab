@@ -928,7 +928,7 @@ func jobStatus(job *ViewJob) (rune, tcell.Color) {
 	case string(gitlab.Manual):
 		return '■', tcell.ColorGrey
 	case string(gitlab.Canceled):
-		return 'Ø', tcell.ColorDefault
+		return 'Ø', tcell.ColorGrey
 	case string(gitlab.Skipped):
 		return '»', tcell.ColorDefault
 	}

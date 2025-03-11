@@ -446,6 +446,12 @@ func Test_LinkJobsNegative(t *testing.T) {
 	}
 }
 
+func Test_jobStatusCanceled(t *testing.T) {
+	status, color := jobStatus(&ViewJob{Status: "canceled"})
+	assert.Equal(t, 'Ø', status)
+	assert.Equal(t, tcell.ColorGrey, color)
+}
+
 func Test_jobsView(t *testing.T) {
 	now := time.Now()
 	past := now.Add(time.Second * -61)
