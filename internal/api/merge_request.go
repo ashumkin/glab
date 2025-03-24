@@ -200,6 +200,14 @@ var DeleteMR = func(client *gitlab.Client, projectID any, mrID int) error {
 
 	return nil
 }
+var StartMRThread = func(client *gitlab.Client, projectID interface{}, mrID int, opts *gitlab.CreateMergeRequestDiscussionOptions) (*gitlab.Discussion, error) {
+	discussion, _, err := client.Discussions.CreateMergeRequestDiscussion(projectID, mrID, opts)
+	if err != nil {
+		return discussion, err
+	}
+
+	return discussion, nil
+}
 
 type cliListMROptions struct {
 	assigneeIds []int
