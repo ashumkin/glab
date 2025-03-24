@@ -83,6 +83,10 @@ func NewCmdNote(f cmdutils.Factory) *cobra.Command {
 				return fmt.Errorf("aborted... Note has an empty message.")
 			}
 
+			isThread, _ := cmd.Flags().GetBool("thread")
+			if err != nil {
+				return err
+			}
 			uniqueNoteEnabled, _ := cmd.Flags().GetBool("unique")
 
 			if uniqueNoteEnabled {
@@ -93,24 +97,40 @@ func NewCmdNote(f cmdutils.Factory) *cobra.Command {
 				}
 				for _, noteInfo := range notes {
 					if noteInfo.Body == strings.TrimSpace(body) {
-						fmt.Fprintf(f.IO().StdOut, "%s#note_%d\n", mr.WebURL, noteInfo.ID)
+						printNoteURL(f, mr.WebURL, noteInfo.ID)
+
 						return nil
 					}
 				}
 			}
+			if isThread {
+				thread, err := api.StartMRThread(client, repo.FullName(), mr.IID, &gitlab.CreateMergeRequestDiscussionOptions{
+					Body: &body,
+				})
+				if err != nil {
+					return err
+				}
+				if len(thread.Notes) == 0 {
+					return fmt.Errorf("no notes found for created discussion!? (%s)", thread.ID)
+				}
+				noteInfo := thread.Notes[0]
+				printNoteURL(f, mr.WebURL, noteInfo.ID)
 
+				return nil
+			}
 			noteInfo, _, err := client.Notes.CreateMergeRequestNote(repo.FullName(), mr.IID, &gitlab.CreateMergeRequestNoteOptions{Body: &body})
 			if err != nil {
 				return err
 			}
+			printNoteURL(f, mr.WebURL, noteInfo.ID)
 
-			fmt.Fprintf(f.IO().StdOut, "%s#note_%d\n", mr.WebURL, noteInfo.ID)
 			return nil
 		},
 	}
 
 	mrCreateNoteCmd.Flags().StringP("message", "m", "", "Comment or note message.")
 	mrCreateNoteCmd.Flags().Bool("unique", false, "Don't create a comment or note if it already exists.")
+	mrCreateNoteCmd.Flags().BoolP("thread", "T", false, "Add a discussion thread rather than a comment")
 	mrCreateNoteCmd.Flags().Int64("resolve", 0, "Resolve the discussion containing the specified note ID.")
 	mrCreateNoteCmd.Flags().Int64("unresolve", 0, "Unresolve the discussion containing the specified note ID.")
 
@@ -126,6 +146,10 @@ func NewCmdNote(f cmdutils.Factory) *cobra.Command {
 	mrCreateNoteCmd.AddCommand(NewCmdReopen(f))
 
 	return mrCreateNoteCmd
+}
+
+func printNoteURL(f cmdutils.Factory, webURL string, noteID int64) {
+	fmt.Fprintf(f.IO().StdOut, "%s#note_%d\n", webURL, noteID)
 }
 
 func resolveDiscussion(ctx context.Context, client *gitlab.Client, f cmdutils.Factory, mr *gitlab.MergeRequest, repo glrepo.Interface, noteID int64, resolve bool) error {
