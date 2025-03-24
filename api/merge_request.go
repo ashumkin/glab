@@ -322,6 +322,19 @@ var CreateMRNote = func(client *gitlab.Client, projectID interface{}, mrID int, 
 	return note, nil
 }
 
+var StartMRThread = func(client *gitlab.Client, projectID interface{}, mrID int, opts *gitlab.CreateMergeRequestDiscussionOptions) (*gitlab.Discussion, error) {
+	if client == nil {
+		client = apiClient.Lab()
+	}
+
+	discussion, _, err := client.Discussions.CreateMergeRequestDiscussion(projectID, mrID, opts)
+	if err != nil {
+		return discussion, err
+	}
+
+	return discussion, nil
+}
+
 var ListMRNotes = func(client *gitlab.Client, projectID interface{}, mrID int, opts *gitlab.ListMergeRequestNotesOptions) ([]*gitlab.Note, error) {
 	if client == nil {
 		client = apiClient.Lab()
