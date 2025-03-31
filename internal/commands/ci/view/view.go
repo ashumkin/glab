@@ -350,7 +350,9 @@ func (o *options) run(ctx context.Context, args []string) error {
 		SetBorder(true).
 		SetBorderStyle(tcell.StyleDefault).
 		SetTitleColor(tcell.ColorDefault).
-		SetTitle(fmt.Sprintf(" Pipeline #%d (%s) triggered %s by %s ", pipelineID, projectID, utils.TimeToPrettyTimeAgo(pipelineCreatedAt), pipelineUser.Name))
+		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s) triggered %s by %s ",
+			pipelineID, projectID, o.refName,
+			utils.TimeToPrettyTimeAgo(pipelineCreatedAt), pipelineUser.Name))
 
 	boxes = make(map[string]*tview.TextView)
 	jobsCh := make(chan []*ViewJob)
