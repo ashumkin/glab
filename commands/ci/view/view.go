@@ -85,6 +85,7 @@ func (o *ViewOpts) createCommitFromPipeInfo(info *gitlab.PipelineInfo) {
 		ID:           info.SHA,
 		LastPipeline: info,
 	}
+	o.RefName = info.Ref
 }
 
 type ViewJobKind int64
@@ -347,7 +348,9 @@ func drawView(opts ViewOpts) error {
 		SetBorderStyle(tcell.StyleDefault).
 		SetBackgroundColor(tcell.ColorDefault).
 		SetTitleColor(tcell.ColorDefault).
-		SetTitle(fmt.Sprintf(" Pipeline #%d (%s) triggered %s by %s ", opts.Commit.LastPipeline.ID, opts.ProjectID, utils.TimeToPrettyTimeAgo(*opts.Commit.LastPipeline.CreatedAt), opts.PipelineUser.Name))
+		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s) triggered %s by %s ", opts.Commit.LastPipeline.ID,
+			opts.ProjectID, opts.RefName,
+			utils.TimeToPrettyTimeAgo(*opts.Commit.LastPipeline.CreatedAt), opts.PipelineUser.Name))
 
 	boxes = make(map[string]*tview.TextView)
 	jobsCh := make(chan []*ViewJob)
