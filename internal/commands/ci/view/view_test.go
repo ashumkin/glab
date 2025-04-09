@@ -337,7 +337,7 @@ func Test_LinkJobs(t *testing.T) {
 		b.Draw(screen)
 	}
 
-	err = linkJobs(screen, jobs, boxes)
+	err = linkJobs(screen, &appState{jobs: jobs, boxes: boxes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,8 +425,7 @@ func Test_LinkJobsNegative(t *testing.T) {
 		}
 		t.Run(test.desc, func(t *testing.T) {
 			t.Parallel()
-
-			assert.Error(t, linkJobs(screen, test.jobs, test.boxes))
+			assert.Error(t, linkJobs(screen, &appState{jobs: test.jobs, boxes: test.boxes}))
 		})
 	}
 }
@@ -610,8 +609,7 @@ func Test_jobsView(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
-			boxes = make(map[string]*tview.TextView)
+			boxes := make(map[string]*tview.TextView)
 			jobsCh := make(chan []*ViewJob)
 			inputCh := make(chan struct{})
 			root := tview.NewPages()
@@ -633,10 +631,11 @@ func Test_jobsView(t *testing.T) {
 				jobsCh <- tt.jobs
 			}()
 			root.Box.Focus(nil)
-			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", 0, newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen))
+			appSt := &appState{jobs: tt.jobs, boxes: boxes}
+			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", 0, newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen), appSt)
 			root.Focus(func(p tview.Primitive) { p.Focus(nil) })
 			root.Draw(screen)
-			linkJobsView(nil)(screen)
+			linkJobsView(nil, appSt)(screen)
 			screen.Sync()
 			assertScreen(t, screen, tt.expected)
 		})
