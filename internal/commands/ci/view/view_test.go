@@ -338,7 +338,7 @@ func Test_LinkJobs(t *testing.T) {
 		b.Draw(screen)
 	}
 
-	err = linkJobs(screen, jobs, boxes)
+	err = linkJobs(screen, &appState{jobs: jobs, boxes: boxes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,8 +426,7 @@ func Test_LinkJobsNegative(t *testing.T) {
 		}
 		t.Run(test.desc, func(t *testing.T) {
 			t.Parallel()
-
-			assert.Error(t, linkJobs(screen, test.jobs, test.boxes))
+			assert.Error(t, linkJobs(screen, &appState{jobs: test.jobs, boxes: test.boxes}))
 		})
 	}
 }
@@ -611,8 +610,7 @@ func Test_jobsView(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
-			boxes = make(map[string]*tview.TextView)
+			boxes := make(map[string]*tview.TextView)
 			jobsCh := make(chan []*ViewJob)
 			inputCh := make(chan struct{})
 			root := tview.NewPages()
@@ -634,10 +632,11 @@ func Test_jobsView(t *testing.T) {
 				jobsCh <- tt.jobs
 			}()
 			root.Box.Focus(nil)
-			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", 0, newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen))
+			appSt := &appState{jobs: tt.jobs, boxes: boxes}
+			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", 0, newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen), appSt)
 			root.Focus(func(p tview.Primitive) { p.Focus(nil) })
 			root.Draw(screen)
-			linkJobsView(nil)(screen)
+			linkJobsView(nil, appSt)(screen)
 			screen.Sync()
 			assertScreen(t, screen, tt.expected)
 		})
@@ -1355,33 +1354,32 @@ func Test_navigatorSurvivesPipelineSwitch(t *testing.T) {
 // instead of panicking when the stack is empty and the commit has no
 // LastPipeline. Before the fix, this dereferenced a nil pointer.
 func Test_curPipeline_nilLastPipeline(t *testing.T) {
-	// Cannot run in parallel: mutates the package-level `pipelines` global.
-	pipelines = nil
+	t.Parallel()
 
 	t.Run("stack empty and LastPipeline nil returns error", func(t *testing.T) {
 		commit := &gitlab.Commit{ID: "deadbeef", LastPipeline: nil}
-		got, err := curPipeline(commit)
+		pipelines := make([]gitlab.PipelineInfo, 0)
+		got, err := curPipeline(pipelines, commit)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "deadbeef")
 		assert.Equal(t, gitlab.PipelineInfo{}, got)
 	})
 
 	t.Run("stack empty falls back to LastPipeline", func(t *testing.T) {
-		pipelines = nil
 		commit := &gitlab.Commit{
 			ID:           "deadbeef",
 			LastPipeline: &gitlab.PipelineInfo{ID: 42, ProjectID: 7},
 		}
-		got, err := curPipeline(commit)
+		pipelines := make([]gitlab.PipelineInfo, 0)
+		got, err := curPipeline(pipelines, commit)
 		require.NoError(t, err)
 		assert.Equal(t, int64(42), got.ID)
 	})
 
 	t.Run("stack non-empty ignores LastPipeline", func(t *testing.T) {
-		pipelines = []gitlab.PipelineInfo{{ID: 99, ProjectID: 7}}
-		t.Cleanup(func() { pipelines = nil })
+		pipelines := []gitlab.PipelineInfo{{ID: 99, ProjectID: 7}}
 		commit := &gitlab.Commit{ID: "deadbeef", LastPipeline: nil}
-		got, err := curPipeline(commit)
+		got, err := curPipeline(pipelines, commit)
 		require.NoError(t, err)
 		assert.Equal(t, int64(99), got.ID)
 	})
