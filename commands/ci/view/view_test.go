@@ -326,7 +326,7 @@ func Test_LinkJobs(t *testing.T) {
 		b.Draw(screen)
 	}
 
-	err = linkJobs(screen, jobs, boxes)
+	err = linkJobs(screen, &appState{jobs: jobs, boxes: boxes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func Test_LinkJobsNegative(t *testing.T) {
 		test := test
 		t.Run(test.desc, func(t *testing.T) {
 			t.Parallel()
-			assert.Error(t, linkJobs(screen, test.jobs, test.boxes))
+			assert.Error(t, linkJobs(screen, &appState{jobs: test.jobs, boxes: test.boxes}))
 		})
 	}
 }
@@ -524,7 +524,7 @@ func Test_jobsView(t *testing.T) {
 		},
 	}
 
-	boxes = make(map[string]*tview.TextView)
+	boxes := make(map[string]*tview.TextView)
 	jobsCh := make(chan []*ViewJob)
 	inputCh := make(chan struct{})
 	root := tview.NewPages()
@@ -546,10 +546,11 @@ func Test_jobsView(t *testing.T) {
 		jobsCh <- jobs
 	}()
 	root.Box.Focus(nil)
-	jobsView(nil, jobsCh, inputCh, root, ViewOpts{})
+	appSt := &appState{jobs: jobs, boxes: boxes}
+	jobsView(nil, jobsCh, inputCh, root, ViewOpts{titler: newTitler("", "", 0)}, appSt)
 	root.Focus(func(p tview.Primitive) { p.Focus(nil) })
 	root.Draw(screen)
-	linkJobsView(nil)(screen)
+	linkJobsView(nil, appSt)(screen)
 	screen.Sync()
 	assertScreen(t, screen, expected)
 }
