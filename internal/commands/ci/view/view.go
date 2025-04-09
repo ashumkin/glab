@@ -249,9 +249,15 @@ func (o *options) run(ctx context.Context, args []string) error {
 		if len(pipeInfos) == 0 {
 			return fmt.Errorf("Cannot find pipelines for MR %d", mrID)
 		}
-		if o.openInBrowser {
-			pipeline = &gitlab.Pipeline{WebURL: pipeInfos[0].WebURL}
-		} else {
+		pipeline = &gitlab.Pipeline{
+			ID:        pipeInfos[0].ID,
+			ProjectID: pipeInfos[0].ProjectID,
+			SHA:       pipeInfos[0].SHA,
+			Ref:       pipeInfos[0].Ref,
+			WebURL:    pipeInfos[0].WebURL,
+			CreatedAt: pipeInfos[0].CreatedAt,
+		}
+		if !o.openInBrowser {
 			pipeline, _, err = client.Pipelines.GetPipeline(projectID, pipeInfos[0].ID)
 			if err != nil {
 				return fmt.Errorf("can't get pipeline #%d info: %w", pipeInfos[0].ID, err)
@@ -282,7 +288,7 @@ func (o *options) run(ctx context.Context, args []string) error {
 
 	// The job grid, logs, cancel, and retry all read the top of this stack to
 	// decide which pipeline they are acting on.
-	pipelines = append(make([]gitlab.PipelineInfo, 0, 10), pipelineInfo(pipeline))
+	pipelines := append(make([]gitlab.PipelineInfo, 0, 32), pipelineInfo(pipeline))
 
 	// Use terminal default colors instead of tview's hardcoded white-on-black theme.
 	// tview.Styles = tview.Theme{}
@@ -298,7 +304,6 @@ func (o *options) run(ctx context.Context, args []string) error {
 			pipeline.ID, projectID, pipeline.Ref, pipeline.SHA[0:7],
 			utils.TimeToPrettyTimeAgo(*pipeline.CreatedAt), pipeline.User.Name))
 
-	boxes = make(map[string]*tview.TextView)
 	jobsCh := make(chan []*ViewJob)
 	forceUpdateCh := make(chan bool)
 	inputCh := make(chan struct{})
@@ -316,8 +321,9 @@ func (o *options) run(ctx context.Context, args []string) error {
 	defer recoverPanic(app)
 
 	var navi navigator
-	app.SetInputCapture(inputCapture(ctx, app, root, &navi, inputCh, forceUpdateCh, o, client))
-	go updateJobs(app, jobsCh, forceUpdateCh, client)
+	appSt := newAppState()
+	app.SetInputCapture(inputCapture(ctx, app, root, &navi, inputCh, forceUpdateCh, pipelines, appSt, o, client))
+	go updateJobs(app, pipelines, jobsCh, forceUpdateCh, appSt, client)
 	cfg := o.config()
 	ff, _ := cfg.Get("", "ci.view.title.match")
 	r, _ := cfg.Get("", "ci.view.title.replace")
@@ -331,11 +337,11 @@ func (o *options) run(ctx context.Context, args []string) error {
 		defer recoverPanic(app)
 		for {
 			app.SetFocus(root)
-			jobsView(ctx, app, jobsCh, inputCh, root, client, projectID, pipeline.SHA, titlr)
+			jobsView(ctx, app, jobsCh, inputCh, root, client, projectID, pipeline.SHA, titlr, appSt, pipelines)
 			app.Draw()
 		}
 	}()
-	if err := app.SetScreen(screen).SetRoot(root, true).SetAfterDrawFunc(linkJobsView(app)).Run(); err != nil {
+	if err := app.SetScreen(screen).SetRoot(root, true).SetAfterDrawFunc(linkJobsView(app, appSt)).Run(); err != nil {
 		return err
 	}
 	return nil
@@ -346,11 +352,11 @@ var buttonActivatedStyle = tcell.StyleDefault.Underline(true).Bold(true).Reverse
 
 // handleBridgeJobSelection handles the user pressing Enter on a bridge job (downstream pipeline trigger).
 // It navigates to the downstream pipeline if it exists, or shows an informational modal if it doesn't.
-func handleBridgeJobSelection(app *tview.Application, root *tview.Pages, forceUpdateCh chan<- bool, navi *navigator) {
+func handleBridgeJobSelection(app *tview.Application, root *tview.Pages, forceUpdateCh chan<- bool, navi *navigator, appSt *appState, pipelines []gitlab.PipelineInfo) {
 	// If downstream pipeline exists, navigate to it
-	if curJob.OriginalBridge.DownstreamPipeline != nil {
-		pipelines = append(pipelines, *curJob.OriginalBridge.DownstreamPipeline)
-		curJob = nil
+	if appSt.curJob.OriginalBridge.DownstreamPipeline != nil {
+		pipelines = append(pipelines, *appSt.curJob.OriginalBridge.DownstreamPipeline)
+		appSt.curJob = nil
 		// Reset cursor: the child pipeline has a different jobs slice, so a stale
 		// idx/depth from the parent can index past the end and crash Navigate (#8313).
 		*navi = navigator{}
@@ -360,22 +366,22 @@ func handleBridgeJobSelection(app *tview.Application, root *tview.Pages, forceUp
 	}
 
 	// No downstream pipeline exists yet - show informational modal
-	modalVisible = true
+	appSt.modalVisible = true
 
 	// Determine appropriate message based on job status
 	// Note: We suggest GitLab UI instead of Ctrl+R/P because bridge jobs cannot be
 	// manually triggered via the CLI - they are excluded from the run/retry commands
 	// (see line 377: if curJob.Kind != Job { break })
 	var message string
-	switch curJob.Status {
+	switch appSt.curJob.Status {
 	case string(gitlab.Manual):
-		message = fmt.Sprintf("Downstream pipeline '%s' is waiting to be triggered.\n\nStatus: %s\n\nThis trigger will create a child pipeline when it runs.\nTrigger it via the GitLab UI or wait for the pipeline to run it.", curJob.Name, curJob.Status)
+		message = fmt.Sprintf("Downstream pipeline '%s' is waiting to be triggered.\n\nStatus: %s\n\nThis trigger will create a child pipeline when it runs.\nTrigger it via the GitLab UI or wait for the pipeline to run it.", appSt.curJob.Name, appSt.curJob.Status)
 	case string(gitlab.Pending), string(gitlab.Created):
-		message = fmt.Sprintf("Downstream pipeline '%s' has not started yet.\n\nStatus: %s\n\nThis trigger will create a child pipeline when it runs.", curJob.Name, curJob.Status)
+		message = fmt.Sprintf("Downstream pipeline '%s' has not started yet.\n\nStatus: %s\n\nThis trigger will create a child pipeline when it runs.", appSt.curJob.Name, appSt.curJob.Status)
 	case string(gitlab.Skipped):
-		message = fmt.Sprintf("Downstream pipeline '%s' was skipped and won't create a child pipeline.\n\nStatus: %s", curJob.Name, curJob.Status)
+		message = fmt.Sprintf("Downstream pipeline '%s' was skipped and won't create a child pipeline.\n\nStatus: %s", appSt.curJob.Name, appSt.curJob.Status)
 	default:
-		message = fmt.Sprintf("Downstream pipeline '%s' has not triggered a child pipeline yet.\n\nStatus: %s\n\nThe child pipeline will appear here once the trigger completes.", curJob.Name, curJob.Status)
+		message = fmt.Sprintf("Downstream pipeline '%s' has not triggered a child pipeline yet.\n\nStatus: %s\n\nThe child pipeline will appear here once the trigger completes.", appSt.curJob.Name, appSt.curJob.Status)
 	}
 
 	modal := tview.NewModal().
@@ -384,7 +390,7 @@ func handleBridgeJobSelection(app *tview.Application, root *tview.Pages, forceUp
 		AddButtons([]string{"OK"}).
 		SetButtonActivatedStyle(buttonActivatedStyle).
 		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-			modalVisible = false
+			appSt.modalVisible = false
 			root.RemovePage("downstream-info")
 			app.ForceDraw()
 		})
@@ -399,23 +405,25 @@ func inputCapture(
 	navi *navigator,
 	inputCh chan<- struct{},
 	forceUpdateCh chan<- bool,
+	pipelines []gitlab.PipelineInfo,
+	appSt *appState,
 	opts *options,
 	apiClient *gitlab.Client,
 ) func(event *tcell.EventKey) *tcell.EventKey {
 	return func(event *tcell.EventKey) *tcell.EventKey {
 		if event.Rune() == 'q' || event.Key() == tcell.KeyEscape {
 			switch {
-			case modalVisible:
-				modalVisible = !modalVisible
+			case appSt.modalVisible:
+				appSt.modalVisible = !appSt.modalVisible
 				root.HidePage("yesno")
-			case logsVisible:
-				logsVisible = !logsVisible
-				root.HidePage(logsPageKey(curJob))
+			case appSt.logsVisible:
+				appSt.logsVisible = !appSt.logsVisible
+				root.HidePage(appSt.logsPage())
 				app.ForceDraw()
 			// Only a descent stacks a second pipeline; at the bottom, quit.
 			case len(pipelines) > 1:
 				pipelines = pipelines[:len(pipelines)-1]
-				curJob = nil
+				appSt.curJob = nil
 				// Reset cursor: see comment in handleBridgeJobSelection (#8313).
 				*navi = navigator{}
 				forceUpdateCh <- true
@@ -425,9 +433,9 @@ func inputCapture(
 				return nil
 			}
 		}
-		if !modalVisible && !logsVisible && len(jobs) > 0 {
-			curJob = navi.Navigate(jobs, event)
-			root.SendToFront("jobs-" + curJob.Name)
+		if !appSt.modalVisible && !appSt.logsVisible && len(appSt.jobs) > 0 {
+			appSt.curJob = navi.Navigate(appSt.jobs, event)
+			root.SendToFront("jobs-" + appSt.curJob.Name)
 		}
 		event = normalizeCtrlM(event)
 		switch event.Key() {
@@ -435,29 +443,29 @@ func inputCapture(
 			app.Stop()
 			return nil
 		case tcell.KeyCtrlD:
-			if curJob.Kind == Job && (curJob.Status == string(gitlab.Created) || curJob.Status == string(gitlab.Pending) || curJob.Status == string(gitlab.Running)) {
-				modalVisible = true
+			if appSt.curJob.Kind == Job && (appSt.curJob.Status == string(gitlab.Created) || appSt.curJob.Status == string(gitlab.Pending) || appSt.curJob.Status == string(gitlab.Running)) {
+				appSt.modalVisible = true
 				modal := tview.NewModal().
 					SetBackgroundColor(tcell.ColorDefault).
-					SetText(tview.Escape(fmt.Sprintf("Are you sure you want to cancel %s?", curJob.Name))).
+					SetText(tview.Escape(fmt.Sprintf("Are you sure you want to cancel %s?", appSt.curJob.Name))).
 					AddButtons([]string{"✘ No", "✔ Yes"}).
 					SetButtonActivatedStyle(buttonActivatedStyle).
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-						modalVisible = false
+						appSt.modalVisible = false
 						root.RemovePage("yesno")
 						if buttonLabel != "✔ Yes" {
 							app.ForceDraw()
 							return
 						}
-						root.RemovePage(logsPageKey(curJob))
+						root.RemovePage(appSt.logsPage())
 						app.ForceDraw()
-						job, _, err := apiClient.Jobs.CancelJob(curProjectID(app), curJob.ID)
+						job, _, err := apiClient.Jobs.CancelJob(curProjectID(app, pipelines), appSt.curJob.ID)
 						if err != nil {
 							app.Stop()
 							log.Fatal(err)
 						}
 						if job != nil {
-							curJob = ViewJobFromJob(job)
+							appSt.curJob = ViewJobFromJob(job)
 							app.ForceDraw()
 						}
 					})
@@ -467,16 +475,16 @@ func inputCapture(
 				return nil
 			}
 		case tcell.KeyCtrlP, tcell.KeyCtrlR:
-			if modalVisible || curJob.Kind != Job {
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
 				break
 			}
-			modalVisible = true
-			if curJob.Status == string(gitlab.Created) {
+			appSt.modalVisible = true
+			if appSt.curJob.Status == string(gitlab.Created) {
 				modal := tview.NewModal().
-					SetText(fmt.Sprintf("The job %s is not retriable", curJob.Name)).
+					SetText(fmt.Sprintf("The job %s is not retriable", appSt.curJob.Name)).
 					AddButtons([]string{"OK"}).
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-						modalVisible = false
+						appSt.modalVisible = false
 						root.RemovePage("ok")
 						app.ForceDraw()
 					})
@@ -484,31 +492,31 @@ func inputCapture(
 			} else {
 				modal := tview.NewModal().
 					SetBackgroundColor(tcell.ColorDefault).
-					SetText(tview.Escape(fmt.Sprintf("Are you sure you want to run %s?", curJob.Name))).
+					SetText(tview.Escape(fmt.Sprintf("Are you sure you want to run %s?", appSt.curJob.Name))).
 					AddButtons([]string{"✘ No", "✔ Yes"}).
 					SetButtonActivatedStyle(buttonActivatedStyle).
 					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-						modalVisible = false
+						appSt.modalVisible = false
 						root.RemovePage("yesno")
 						if buttonLabel != "✔ Yes" {
 							app.ForceDraw()
 							return
 						}
-						root.RemovePage(logsPageKey(curJob))
+						root.RemovePage(appSt.logsPage())
 						app.ForceDraw()
 
 						job, err := api.PlayOrRetryJobs(
 							apiClient,
-							curProjectID(app),
-							curJob.ID,
-							curJob.Status,
+							curProjectID(app, pipelines),
+							appSt.curJob.ID,
+							appSt.curJob.Status,
 						)
 						if err != nil {
 							app.Stop()
 							log.Fatal(err)
 						}
 						if job != nil {
-							curJob = ViewJobFromJob(job)
+							appSt.curJob = ViewJobFromJob(job)
 							app.ForceDraw()
 						}
 					})
@@ -518,28 +526,28 @@ func inputCapture(
 			app.ForceDraw()
 			return nil
 		case tcell.KeyEnter:
-			if !modalVisible {
-				if curJob.Kind == Job {
-					logsVisible = !logsVisible
-					if !logsVisible {
-						root.HidePage(logsPageKey(curJob))
+			if !appSt.modalVisible {
+				if appSt.curJob.Kind == Job {
+					appSt.logsVisible = !appSt.logsVisible
+					if !appSt.logsVisible {
+						root.HidePage(appSt.logsPage())
 					}
 					inputCh <- struct{}{}
 					app.ForceDraw()
 				} else {
 					// Downstream pipeline trigger selected
-					handleBridgeJobSelection(app, root, forceUpdateCh, navi)
+					handleBridgeJobSelection(app, root, forceUpdateCh, navi, appSt, pipelines)
 				}
 				return nil
 			}
 		case tcell.KeyCtrlSpace:
 			// A bridge ID is not a job ID. Enter descends into it instead.
-			if curJob.Kind != Job {
+			if appSt.curJob.Kind != Job {
 				break
 			}
 			// curJob moves as the user navigates, so snapshot before suspending.
-			traceJob := curJob
-			traceProjectID := curProjectID(app)
+			traceJob := appSt.curJob
+			traceProjectID := curProjectID(app, pipelines)
 			app.Suspend(func() {
 				ctx, cancel := context.WithCancel(ctx)
 				go func() {
@@ -598,8 +606,8 @@ func pipelineInfo(p *gitlab.Pipeline) gitlab.PipelineInfo {
 
 // curProjectID returns the project owning the pipeline being viewed. Resolve it
 // per action: descending into a child pipeline changes it.
-func curProjectID(app *tview.Application) int64 {
-	pipeline, err := curPipeline()
+func curProjectID(app *tview.Application, pipelines []gitlab.PipelineInfo) int64 {
+	pipeline, err := curPipeline(pipelines)
 	if err != nil {
 		app.Stop()
 		log.Fatalf("%v", err)
@@ -620,13 +628,22 @@ func normalizeCtrlM(event *tcell.EventKey) *tcell.EventKey {
 	return event
 }
 
-var (
+type appState struct {
 	logsVisible, modalVisible bool
 	curJob                    *ViewJob
 	jobs                      []*ViewJob
-	pipelines                 []gitlab.PipelineInfo
 	boxes                     map[string]*tview.TextView
-)
+}
+
+func newAppState() *appState {
+	return &appState{
+		boxes: make(map[string]*tview.TextView),
+	}
+}
+
+func (s appState) logsPage() string {
+	return logsPageKey(s.curJob)
+}
 
 // bracketEscaper wraps a writer and escapes square brackets for tview, but preserves ANSI escape sequences.
 // This is necessary because tview interprets square brackets as color tag markers.
@@ -680,7 +697,7 @@ func (b *bracketEscaper) Write(p []byte) (int, error) {
 
 // curPipeline returns the pipeline being viewed: the top of the stack run()
 // seeds and descending into a child pipeline pushes onto.
-func curPipeline() (gitlab.PipelineInfo, error) {
+func curPipeline(pipelines []gitlab.PipelineInfo) (gitlab.PipelineInfo, error) {
 	if len(pipelines) == 0 {
 		return gitlab.PipelineInfo{}, errors.New("no pipeline is being viewed")
 	}
@@ -801,23 +818,25 @@ func jobsView(
 	projectID string,
 	commitSHA string,
 	titler *titler,
+	appSt *appState,
+	pipelines []gitlab.PipelineInfo,
 ) {
 	select {
-	case jobs = <-jobsCh:
+	case appSt.jobs = <-jobsCh:
 	case <-inputCh:
 	case <-time.NewTicker(time.Second * 1).C:
 	}
-	if jobs == nil {
-		jobs = <-jobsCh
+	if appSt.jobs == nil {
+		appSt.jobs = <-jobsCh
 	}
-	if curJob == nil && len(jobs) > 0 {
-		curJob = jobs[0]
+	if appSt.curJob == nil && len(appSt.jobs) > 0 {
+		appSt.curJob = appSt.jobs[0]
 	}
-	if modalVisible {
+	if appSt.modalVisible {
 		return
 	}
-	if logsVisible {
-		logsKey := logsPageKey(curJob)
+	if appSt.logsVisible {
+		logsKey := appSt.logsPage()
 		if !root.SwitchToPage(logsKey).HasPage(logsKey) {
 			tv := tview.NewTextView()
 			tv.
@@ -828,13 +847,13 @@ func jobsView(
 				SetBorder(true).
 				SetBorderStyle(tcell.StyleDefault).
 				SetTitleColor(tcell.ColorDefault).
-				SetTitle(" " + curJob.Name + " ").
+				SetTitle(" " + appSt.curJob.Name + " ").
 				SetTitleAlign(tview.AlignLeft)
 
 			// curJob moves as the user navigates, so snapshot it before the
 			// goroutine reads it.
-			traceJob := curJob
-			traceProjectID := curProjectID(app)
+			traceJob := appSt.curJob
+			traceProjectID := curProjectID(app, pipelines)
 
 			go func() {
 				// Chain: bracketEscaper -> vtclean -> ANSIWriter -> TextView
@@ -876,7 +895,7 @@ func jobsView(
 		lastStage = ""
 	)
 	// get the number of stages
-	for _, j := range jobs {
+	for _, j := range appSt.jobs {
 		if j.Stage != lastStage {
 			lastStage = j.Stage
 			stages++
@@ -888,7 +907,7 @@ func jobsView(
 		stageIdx int
 	)
 	boxKeys := make(map[string]bool)
-	for _, j := range jobs {
+	for _, j := range appSt.jobs {
 		boxX := px + (maxX / stages * stageIdx)
 		if j.Stage != lastStage {
 			stageIdx++
@@ -897,19 +916,19 @@ func jobsView(
 			boxKeys[key] = true
 
 			x, y, w, h := boxX, maxY/6-4, titler.maxLen+2, 3
-			b := box(root, key, x, y, w, h)
+			b := box(appSt.boxes, root, key, x, y, w, h)
 
 			caser := cases.Title(language.English)
 			b.SetText(caser.String(j.Stage))
 			b.SetTextAlign(tview.AlignCenter)
 		}
 	}
-	if len(jobs) > 0 {
-		lastStage = jobs[0].Stage
+	if len(appSt.jobs) > 0 {
+		lastStage = appSt.jobs[0].Stage
 	}
 	rowIdx = 0
 	stageIdx = 0
-	for _, j := range jobs {
+	for _, j := range appSt.jobs {
 		if j.Stage != lastStage {
 			rowIdx = 0
 			lastStage = j.Stage
@@ -920,7 +939,7 @@ func jobsView(
 		key := "jobs-" + j.Name
 		boxKeys[key] = true
 		x, y, w, h := boxX, maxY/6+(rowIdx*5), titler.maxLen+2, 4
-		b := box(root, key, x, y, w, h)
+		b := box(appSt.boxes, root, key, x, y, w, h)
 		// The scope of jobs to show, one or array of: created, pending, running,
 		// failed, success, canceled, skipped; showing all jobs if none provided
 		var statChar rune
@@ -984,15 +1003,15 @@ func jobsView(
 		rowIdx++
 
 	}
-	for k := range boxes {
+	for k := range appSt.boxes {
 		if !boxKeys[k] {
 			root.RemovePage(k)
 		}
 	}
-	root.SendToFront("jobs-" + curJob.Name)
+	root.SendToFront("jobs-" + appSt.curJob.Name)
 }
 
-func box(root *tview.Pages, key string, x, y, w, h int) *tview.TextView {
+func box(boxes map[string]*tview.TextView, root *tview.Pages, key string, x, y, w, h int) *tview.TextView {
 	b, ok := boxes[key]
 	if !ok {
 		b = tview.NewTextView()
@@ -1019,19 +1038,21 @@ func recoverPanic(app *tview.Application) {
 
 func updateJobs(
 	app *tview.Application,
+	pipelines []gitlab.PipelineInfo,
 	jobsCh chan<- []*ViewJob,
 	forceUpdateCh <-chan bool,
+	appSt *appState,
 	apiClient *gitlab.Client,
 ) {
 	defer recoverPanic(app)
 	for {
-		if modalVisible {
+		if appSt.modalVisible {
 			time.Sleep(time.Second * 1)
 			continue
 		}
 		var jobs []*gitlab.Job
 		var bridges []*gitlab.Bridge
-		pipeline, err := curPipeline()
+		pipeline, err := curPipeline(pipelines)
 		if err != nil {
 			app.Stop()
 			//nolint:gocritic // app.Stop() restores the terminal; the deferred recover only handles panics
@@ -1066,10 +1087,10 @@ func updateJobs(
 	}
 }
 
-func linkJobsView(app *tview.Application) func(screen tcell.Screen) {
+func linkJobsView(app *tview.Application, appSt *appState) func(screen tcell.Screen) {
 	return func(screen tcell.Screen) {
 		defer recoverPanic(app)
-		err := linkJobs(screen, jobs, boxes)
+		err := linkJobs(screen, appSt)
 		if err != nil {
 			app.Stop()
 			log.Fatal(err)
@@ -1077,23 +1098,23 @@ func linkJobsView(app *tview.Application) func(screen tcell.Screen) {
 	}
 }
 
-func linkJobs(screen tcell.Screen, jobs []*ViewJob, boxes map[string]*tview.TextView) error {
-	if logsVisible || modalVisible {
+func linkJobs(screen tcell.Screen, appSt *appState) error {
+	if appSt.logsVisible || appSt.modalVisible {
 		return nil
 	}
-	for i, j := range jobs {
-		if _, ok := boxes["jobs-"+j.Name]; !ok {
-			return fmt.Errorf("jobs-%s not found at index: %d", jobs[i].Name, i)
+	for i, j := range appSt.jobs {
+		if _, ok := appSt.boxes["jobs-"+j.Name]; !ok {
+			return fmt.Errorf("jobs-%s not found at index: %d", appSt.jobs[i].Name, i)
 		}
 	}
 	var padding int
 	// find the amount of space between two jobs is adjacent stages
-	for i, k := 0, 1; k < len(jobs); i, k = i+1, k+1 {
-		if jobs[i].Stage == jobs[k].Stage {
+	for i, k := 0, 1; k < len(appSt.jobs); i, k = i+1, k+1 {
+		if appSt.jobs[i].Stage == appSt.jobs[k].Stage {
 			continue
 		}
-		x1, _, w, _ := boxes["jobs-"+jobs[i].Name].GetRect()
-		x2, _, _, _ := boxes["jobs-"+jobs[k].Name].GetRect()
+		x1, _, w, _ := appSt.boxes["jobs-"+appSt.jobs[i].Name].GetRect()
+		x2, _, _, _ := appSt.boxes["jobs-"+appSt.jobs[k].Name].GetRect()
 		stageWidth := x2 - x1 - w
 		switch {
 		case stageWidth <= 3:
@@ -1104,12 +1125,12 @@ func linkJobs(screen tcell.Screen, jobs []*ViewJob, boxes map[string]*tview.Text
 			padding = 3
 		}
 	}
-	for i, k := 0, 1; k < len(jobs); i, k = i+1, k+1 {
-		v1 := boxes["jobs-"+jobs[i].Name]
-		v2 := boxes["jobs-"+jobs[k].Name]
+	for i, k := 0, 1; k < len(appSt.jobs); i, k = i+1, k+1 {
+		v1 := appSt.boxes["jobs-"+appSt.jobs[i].Name]
+		v2 := appSt.boxes["jobs-"+appSt.jobs[k].Name]
 		link(screen, v1.Box, v2.Box, padding,
-			jobs[i].Stage == jobs[0].Stage,           // is first stage?
-			jobs[i].Stage == jobs[len(jobs)-1].Stage) // is last stage?
+			appSt.jobs[i].Stage == appSt.jobs[0].Stage,                 // is first stage?
+			appSt.jobs[i].Stage == appSt.jobs[len(appSt.jobs)-1].Stage) // is last stage?
 	}
 	return nil
 }
