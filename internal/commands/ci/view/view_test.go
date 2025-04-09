@@ -352,7 +352,7 @@ func Test_LinkJobs(t *testing.T) {
 		b.Draw(screen)
 	}
 
-	err = linkJobs(screen, jobs, boxes)
+	err = linkJobs(screen, &appState{jobs: jobs, boxes: boxes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,8 +440,7 @@ func Test_LinkJobsNegative(t *testing.T) {
 		}
 		t.Run(test.desc, func(t *testing.T) {
 			t.Parallel()
-
-			assert.Error(t, linkJobs(screen, test.jobs, test.boxes))
+			assert.Error(t, linkJobs(screen, &appState{jobs: test.jobs, boxes: test.boxes}))
 		})
 	}
 }
@@ -631,8 +630,7 @@ func Test_jobsView(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-
-			boxes = make(map[string]*tview.TextView)
+			boxes := make(map[string]*tview.TextView)
 			jobsCh := make(chan []*ViewJob)
 			inputCh := make(chan struct{})
 			root := tview.NewPages()
@@ -654,10 +652,11 @@ func Test_jobsView(t *testing.T) {
 				jobsCh <- tt.jobs
 			}()
 			root.Box.Focus(nil)
-			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", "", newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen))
+			appSt := &appState{jobs: tt.jobs, boxes: boxes}
+			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", "", newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen), appSt, nil)
 			root.Focus(func(p tview.Primitive) { p.Focus(nil) })
 			root.Draw(screen)
-			linkJobsView(nil)(screen)
+			linkJobsView(nil, appSt)(screen)
 			screen.Sync()
 			assertScreen(t, screen, tt.expected)
 		})
@@ -1405,26 +1404,21 @@ func Test_pipelineInfo(t *testing.T) {
 }
 
 func Test_curPipeline_emptyStack(t *testing.T) {
-	// Cannot run in parallel: mutates the package-level `pipelines` global.
-	pipelines = nil
+	t.Parallel()
 
-	got, err := curPipeline()
+	got, err := curPipeline(nil)
 
 	require.Error(t, err)
 	assert.Equal(t, gitlab.PipelineInfo{}, got)
 }
 
 func Test_handleBridgeJobSelection_retargetsTraceAtDownstreamPipeline(t *testing.T) {
-	// Cannot run in parallel: mutates the package-level view globals.
-	t.Cleanup(func() {
-		pipelines, curJob, jobs, modalVisible = nil, nil, nil, false
-	})
+	t.Parallel()
 
 	app := tview.NewApplication()
-	pipelines = []gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}
-	require.Equal(t, int64(7), curProjectID(app), "precondition: viewing the parent")
-
-	curJob = ViewJobFromBridge(&gitlab.Bridge{
+	pipelines := []gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}
+	appSt := newAppState()
+	appSt.curJob = ViewJobFromBridge(&gitlab.Bridge{
 		ID:                 55,
 		Name:               "trigger-child",
 		Status:             "success",
@@ -1433,27 +1427,22 @@ func Test_handleBridgeJobSelection_retargetsTraceAtDownstreamPipeline(t *testing
 	navi := &navigator{idx: 3, depth: 2}
 	forceUpdateCh := make(chan bool, 1)
 
-	handleBridgeJobSelection(app, tview.NewPages(), forceUpdateCh, navi)
+	handleBridgeJobSelection(app, tview.NewPages(), forceUpdateCh, navi, appSt, &pipelines)
 
-	assert.Equal(t, int64(777), curProjectID(app),
-		"after descending, a trace must be fetched from the downstream project")
-	assert.Nil(t, curJob, "selection is cleared so the child's first job is picked")
+	child, err := curPipeline(pipelines)
+	require.NoError(t, err)
+	assert.Equal(t, int64(777), child.ProjectID)
+	assert.Nil(t, appSt.curJob, "selection is cleared so the child's first job is picked")
 	assert.Equal(t, &navigator{}, navi, "cursor resets for the child's jobs slice")
 	assert.True(t, <-forceUpdateCh, "the job list is refreshed for the child pipeline")
-
-	pipelines = pipelines[:len(pipelines)-1]
-	assert.Equal(t, int64(7), curProjectID(app))
 }
 
 func Test_inputCapture_ctrlSpaceIgnoresBridgeJobs(t *testing.T) {
-	// Cannot run in parallel: mutates the package-level view globals.
-	t.Cleanup(func() {
-		pipelines, curJob, jobs, logsVisible, modalVisible = nil, nil, nil, false, false
-	})
-	pipelines = []gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}
-	jobs = nil
-	curJob = &ViewJob{ID: 55, Name: "trigger-child", Kind: Bridge}
-	logsVisible, modalVisible = false, false
+	t.Parallel()
+
+	pipelines := []gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}
+	appSt := newAppState()
+	appSt.curJob = &ViewJob{ID: 55, Name: "trigger-child", Kind: Bridge}
 
 	// No EXPECT() calls: any API request this key press makes fails the test.
 	tc := gitlabtesting.NewTestClient(t)
@@ -1462,6 +1451,7 @@ func Test_inputCapture_ctrlSpaceIgnoresBridgeJobs(t *testing.T) {
 	handler := inputCapture(
 		t.Context(), tview.NewApplication(), tview.NewPages(), &navigator{},
 		make(chan struct{}, 1), make(chan bool, 1),
+		&pipelines, appSt,
 		&options{io: ios}, tc.Client,
 	)
 
@@ -1477,7 +1467,7 @@ func Test_inputCapture_ctrlSShowsFullJobName(t *testing.T) {
 	// Longer than the maxTitle columns a job box gives its title
 	const longName = "build:integration:very-long-name"
 
-	newHandler := func(t *testing.T, root *tview.Pages) func(*tcell.EventKey) *tcell.EventKey {
+	newHandler := func(t *testing.T, root *tview.Pages, appSt *appState) func(*tcell.EventKey) *tcell.EventKey {
 		t.Helper()
 
 		tc := gitlabtesting.NewTestClient(t)
@@ -1485,21 +1475,9 @@ func Test_inputCapture_ctrlSShowsFullJobName(t *testing.T) {
 		return inputCapture(
 			t.Context(), tview.NewApplication(), root, &navigator{},
 			make(chan struct{}, 1), make(chan bool, 1),
+			&[]gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}, appSt,
 			&options{io: ios}, tc.Client,
 		)
-	}
-
-	// Cannot run in parallel: mutates the package-level view globals.
-	selectJob := func(t *testing.T, job *ViewJob) {
-		t.Helper()
-		t.Cleanup(func() {
-			pipelines, curJob, jobs, logsVisible, modalVisible = nil, nil, nil, false, false
-		})
-		pipelines = []gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}
-		// jobs stays nil so the key press cannot move the selection off job.
-		jobs = nil
-		curJob = job
-		logsVisible, modalVisible = false, false
 	}
 
 	ctrlS := func() *tcell.EventKey {
@@ -1507,13 +1485,14 @@ func Test_inputCapture_ctrlSShowsFullJobName(t *testing.T) {
 	}
 
 	t.Run("opens a modal holding the untruncated name", func(t *testing.T) {
-		selectJob(t, &ViewJob{ID: 55, Name: longName, Stage: "integration"})
+		appSt := newAppState()
+		appSt.curJob = &ViewJob{ID: 55, Name: longName, Stage: "integration"}
 		root := tview.NewPages()
 
-		got := newHandler(t, root)(ctrlS())
+		got := newHandler(t, root, appSt)(ctrlS())
 
 		assert.Nil(t, got, "Ctrl+S is consumed by the modal")
-		assert.True(t, modalVisible, "the view must stop redrawing behind the modal")
+		assert.True(t, appSt.modalVisible, "the view must stop redrawing behind the modal")
 		require.True(t, root.HasPage(jobNamePage))
 
 		screen := tcell.NewSimulationScreen("UTF-8")
@@ -1527,22 +1506,24 @@ func Test_inputCapture_ctrlSShowsFullJobName(t *testing.T) {
 
 	t.Run("opens for a bridge job too", func(t *testing.T) {
 		// Bridge names are truncated in exactly the same way as job names.
-		selectJob(t, &ViewJob{ID: 55, Name: longName, Kind: Bridge})
+		appSt := newAppState()
+		appSt.curJob = &ViewJob{ID: 55, Name: longName, Kind: Bridge}
 		root := tview.NewPages()
 
-		got := newHandler(t, root)(ctrlS())
+		got := newHandler(t, root, appSt)(ctrlS())
 
 		assert.Nil(t, got)
 		assert.True(t, root.HasPage(jobNamePage))
 	})
 
 	t.Run("is ignored while another modal is open", func(t *testing.T) {
-		selectJob(t, &ViewJob{ID: 55, Name: longName})
-		modalVisible = true
+		appSt := newAppState()
+		appSt.curJob = &ViewJob{ID: 55, Name: longName}
+		appSt.modalVisible = true
 		root := tview.NewPages()
 
 		event := ctrlS()
-		got := newHandler(t, root)(event)
+		got := newHandler(t, root, appSt)(event)
 
 		assert.Same(t, event, got, "Ctrl+S must not stack a modal on a modal")
 		assert.False(t, root.HasPage(jobNamePage))
@@ -1551,11 +1532,11 @@ func Test_inputCapture_ctrlSShowsFullJobName(t *testing.T) {
 	t.Run("is ignored when no job is selected", func(t *testing.T) {
 		// curJob is nil until the first job list arrives, and between
 		// descending into a child pipeline and its jobs being fetched.
-		selectJob(t, nil)
+		appSt := newAppState()
 		root := tview.NewPages()
 
 		event := ctrlS()
-		got := newHandler(t, root)(event)
+		got := newHandler(t, root, appSt)(event)
 
 		assert.Same(t, event, got)
 		assert.False(t, root.HasPage(jobNamePage))
@@ -1563,23 +1544,22 @@ func Test_inputCapture_ctrlSShowsFullJobName(t *testing.T) {
 }
 
 func Test_curPipeline_tracksDescentIntoChildPipeline(t *testing.T) {
-	// Cannot run in parallel: mutates the package-level `pipelines` global.
-	t.Cleanup(func() { pipelines = nil })
+	t.Parallel()
 
-	pipelines = []gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}
-	parent, err := curPipeline()
+	pipelines := []gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}
+	parent, err := curPipeline(pipelines)
 	require.NoError(t, err)
 	assert.Equal(t, int64(7), parent.ProjectID)
 
 	// A child pipeline in another project, as a multi-project trigger produces.
 	pipelines = append(pipelines, gitlab.PipelineInfo{ID: 20, ProjectID: 777})
-	child, err := curPipeline()
+	child, err := curPipeline(pipelines)
 	require.NoError(t, err)
 	assert.Equal(t, int64(20), child.ID)
 	assert.Equal(t, int64(777), child.ProjectID)
 
 	pipelines = pipelines[:len(pipelines)-1]
-	back, err := curPipeline()
+	back, err := curPipeline(pipelines)
 	require.NoError(t, err)
 	assert.Equal(t, int64(10), back.ID)
 	assert.Equal(t, int64(7), back.ProjectID)
@@ -1705,36 +1685,33 @@ func TestNormalizeViKeys(t *testing.T) {
 }
 
 func Test_inputCapture_viKeys(t *testing.T) {
-	// Cannot run in parallel: mutates the package-level view globals.
-	t.Cleanup(func() {
-		pipelines, curJob, jobs, logsVisible, modalVisible = nil, nil, nil, false, false
-	})
-	pipelines = []gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}
-	jobs = nil
-	curJob = &ViewJob{ID: 55, Name: "build", Kind: Job, Status: string(gitlab.Success)}
+	pipelines := []gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}
+	appSt := newAppState()
+	appSt.curJob = &ViewJob{ID: 55, Name: "build", Kind: Job, Status: string(gitlab.Success)}
 
 	tc := gitlabtesting.NewTestClient(t)
 	ios, _, _, _ := cmdtest.TestIOStreams()
 	handler := inputCapture(
 		t.Context(), tview.NewApplication(), tview.NewPages(), &navigator{},
 		make(chan struct{}, 1), make(chan bool, 1),
+		&pipelines, appSt,
 		&options{io: ios}, tc.Client,
 	)
 
-	modalVisible = true
+	appSt.modalVisible = true
 	assert.Equal(t, tcell.KeyLeft, handler(tcell.NewEventKey(tcell.KeyRune, 'h', tcell.ModNone)).Key())
 	assert.Equal(t, tcell.KeyDown, handler(tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModNone)).Key())
 	assert.Equal(t, tcell.KeyUp, handler(tcell.NewEventKey(tcell.KeyRune, 'k', tcell.ModNone)).Key())
 	assert.Equal(t, tcell.KeyRight, handler(tcell.NewEventKey(tcell.KeyRune, 'l', tcell.ModNone)).Key())
 
-	modalVisible = false
-	jobs = []*ViewJob{
+	appSt.modalVisible = false
+	appSt.jobs = []*ViewJob{
 		{ID: 1, Name: "build", Kind: Job, Stage: "build"},
 		{ID: 2, Name: "lint", Kind: Job, Stage: "build"},
 	}
 	got := handler(tcell.NewEventKey(tcell.KeyRune, 'j', tcell.ModNone))
 	assert.Equal(t, tcell.KeyDown, got.Key())
-	assert.Equal(t, "lint", curJob.Name, "j still moves to the next job outside a modal")
+	assert.Equal(t, "lint", appSt.curJob.Name, "j still moves to the next job outside a modal")
 }
 
 // Test_bridgeWithoutDownstreamPipeline tests that we correctly handle bridge jobs
@@ -1916,19 +1893,16 @@ func Test_jobsView_bracketedJobNames(t *testing.T) {
 
 	render := func(t *testing.T, selected string) map[string]string {
 		t.Helper()
-		t.Cleanup(func() {
-			boxes, jobs, curJob, titleScroll = nil, nil, nil, titleScroller{}
-		})
 
 		viewJobs := []*ViewJob{
 			{ID: 1, Name: bracketed, Stage: "deploy", Status: "success"},
 			{ID: 2, Name: "short", Stage: "deploy", Status: "success"},
 		}
-		boxes = make(map[string]*tview.TextView)
-		curJob = viewJobs[0]
+		appSt := newAppState()
+		appSt.curJob = viewJobs[0]
 		for _, j := range viewJobs {
 			if j.Name == selected {
-				curJob = j
+				appSt.curJob = j
 			}
 		}
 
@@ -1936,11 +1910,11 @@ func Test_jobsView_bracketedJobNames(t *testing.T) {
 		root.SetRect(0, 0, 90, 30)
 		jobsCh := make(chan []*ViewJob, 1)
 		jobsCh <- viewJobs
-		jobsView(t.Context(), nil, jobsCh, make(chan struct{}), root, nil, "", "", newTitler("", "", maxTitle))
+		jobsView(t.Context(), nil, jobsCh, make(chan struct{}), root, nil, "", "", newTitler("", "", maxTitle), appSt, nil)
 
 		titles := make(map[string]string, len(viewJobs))
 		for _, j := range viewJobs {
-			titles[j.Name] = boxes["jobs-"+j.Name].GetTitle()
+			titles[j.Name] = appSt.boxes["jobs-"+j.Name].GetTitle()
 		}
 		return titles
 	}
