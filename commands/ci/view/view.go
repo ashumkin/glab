@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/gitlab-org/cli/internal/glrepo"
 	"gitlab.com/gitlab-org/cli/pkg/prompt"
 
 	"gitlab.com/gitlab-org/cli/commands/mr/mrutils"
@@ -208,35 +209,10 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				return err
 			}
 			if opts.choose {
-				l := &gitlab.ListProjectPipelinesOptions{}
-				l.Page = 1
-				l.PerPage = 30
-
-				pipes, err := api.ListProjectPipelines(opts.ApiClient, repo.FullName(), l)
+				opts, err = choosePipeline(opts, repo)
 				if err != nil {
 					return err
 				}
-				if len(pipes) == 0 {
-					return fmt.Errorf("no pipelines found")
-				}
-				pipeMap := make(map[string]*gitlab.PipelineInfo)
-				var pipeList []string
-				for _, pipe := range pipes {
-					var duration string
-					if pipe.CreatedAt != nil {
-						duration = "(" + utils.TimeToPrettyTimeAgo(*pipe.CreatedAt) + ")"
-					}
-
-					t := fmt.Sprintf("(%s) • #%d (%d) %s %s", pipe.Status, pipe.ID, pipe.IID, pipe.Ref, duration)
-					pipeList = append(pipeList, t)
-					pipeMap[t] = pipe
-				}
-				chosenPipeline := pipeList[0]
-				err = prompt.Select(&chosenPipeline, "pipeline", "Choose pipeline", pipeList)
-				if err != nil {
-					return fmt.Errorf("pipeline must be chosen")
-				}
-				opts.createCommitFromPipeInfo(pipeMap[chosenPipeline])
 			} else if opts.RefName != "" {
 				opts.refNameIsSetExplicitly = true
 			} else if opts.PipelineID > -1 {
@@ -324,13 +300,25 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 				return utils.OpenInBrowser(webURL, browser)
 			}
 
-			p, err := api.GetSinglePipeline(opts.ApiClient, opts.Commit.LastPipeline.ID, opts.ProjectID)
-			if err != nil {
-				return fmt.Errorf("Can't get pipeline #%d info: %s", opts.Commit.LastPipeline.ID, err)
-			}
-			opts.PipelineUser = p.User
+			var errLoop error
+			for errLoop == nil {
+				p, err := api.GetSinglePipeline(opts.ApiClient, opts.Commit.LastPipeline.ID, opts.ProjectID)
+				if err != nil {
+					errLoop = fmt.Errorf("Can't get pipeline #%d info: %s", opts.Commit.LastPipeline.ID, err)
+					break
+				}
+				opts.PipelineUser = p.User
 
-			return drawView(opts)
+				errLoop = drawView(opts)
+				if errLoop != nil {
+					return errLoop
+				}
+				if !opts.choose {
+					continue
+				}
+				opts, errLoop = choosePipeline(opts, repo)
+			}
+			return errLoop
 		},
 	}
 
@@ -343,6 +331,40 @@ func NewCmdView(f *cmdutils.Factory) *cobra.Command {
 	pipelineCIView.Flags().BoolVarP(&opts.OpenInBrowser, "web", "w", false, "Open pipeline in a browser. Uses default browser, or browser specified in BROWSER variable.")
 
 	return pipelineCIView
+}
+
+func choosePipeline(opts ViewOpts, repo glrepo.Interface) (ViewOpts, error) {
+	l := &gitlab.ListProjectPipelinesOptions{}
+	l.Page = 1
+	l.PerPage = 30
+
+	pipes, err := api.ListProjectPipelines(opts.ApiClient, repo.FullName(), l)
+	if err != nil {
+		return ViewOpts{}, err
+	}
+	if len(pipes) == 0 {
+		return ViewOpts{}, fmt.Errorf("no pipelines found")
+	}
+	pipeMap := make(map[string]*gitlab.PipelineInfo)
+	var pipeList []string
+	for _, pipe := range pipes {
+		var duration string
+		if pipe.CreatedAt != nil {
+			duration = "(" + utils.TimeToPrettyTimeAgo(*pipe.CreatedAt) + ")"
+		}
+
+		t := fmt.Sprintf("(%s) • #%d (%d) %s %s", pipe.Status, pipe.ID, pipe.IID, pipe.Ref, duration)
+		pipeList = append(pipeList, t)
+		pipeMap[t] = pipe
+	}
+	chosenPipeline := pipeList[0]
+	err = prompt.Select(&chosenPipeline, "pipeline", "Choose pipeline", pipeList)
+	if err != nil {
+		return ViewOpts{}, err
+	}
+	opts.createCommitFromPipeInfo(pipeMap[chosenPipeline])
+
+	return opts, nil
 }
 
 func drawView(opts ViewOpts) error {
