@@ -283,9 +283,11 @@ func (o *options) run(args []string) error {
 		commit = &gitlab.Commit{
 			ID: lastPipeline.SHA,
 			LastPipeline: &gitlab.PipelineInfo{
+				Ref:       lastPipeline.Ref,
 				ID:        lastPipeline.ID,
 				WebURL:    lastPipeline.WebURL,
 				ProjectID: lastPipeline.ProjectID,
+				SHA:       lastPipeline.SHA,
 				CreatedAt: lastPipeline.CreatedAt,
 			},
 		}
@@ -401,8 +403,8 @@ func drawView(
 		SetBorderStyle(tcell.StyleDefault).
 		SetBackgroundColor(tcell.ColorDefault).
 		SetTitleColor(tcell.ColorDefault).
-		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s) triggered %s by %s ",
-			commit.LastPipeline.ID, projectID, o.refName,
+		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s@%s) triggered %s by %s ",
+			commit.LastPipeline.ID, projectID, commit.LastPipeline.Ref, commit.LastPipeline.SHA[0:7],
 			utils.TimeToPrettyTimeAgo(*commit.LastPipeline.CreatedAt), pipelineUser))
 
 	jobsCh := make(chan []*ViewJob)
