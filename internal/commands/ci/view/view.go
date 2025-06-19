@@ -301,6 +301,8 @@ func (o *options) run(ctx context.Context, args []string) error {
 				WebURL:    lastPipeline.WebURL,
 				ProjectID: lastPipeline.ProjectID,
 				CreatedAt: lastPipeline.CreatedAt,
+				Ref:       lastPipeline.Ref,
+				SHA:       lastPipeline.SHA,
 			},
 		}
 		pipelineID = commit.LastPipeline.ID
@@ -347,8 +349,8 @@ func (o *options) run(ctx context.Context, args []string) error {
 		SetBorder(true).
 		SetBorderStyle(tcell.StyleDefault).
 		SetTitleColor(tcell.ColorDefault).
-		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s) triggered %s by %s ",
-			pipelineID, projectID, o.refName,
+		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s@%s) triggered %s by %s ",
+			pipelineID, projectID, commit.LastPipeline.Ref, commit.LastPipeline.SHA[0:7],
 			utils.TimeToPrettyTimeAgo(pipelineCreatedAt), pipelineUser.Name))
 
 	boxes = make(map[string]*tview.TextView)
