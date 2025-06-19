@@ -376,8 +376,8 @@ func drawView(opts ViewOpts) error {
 		SetBorderStyle(tcell.StyleDefault).
 		SetBackgroundColor(tcell.ColorDefault).
 		SetTitleColor(tcell.ColorDefault).
-		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s) triggered %s by %s ", opts.Commit.LastPipeline.ID,
-			opts.ProjectID, opts.RefName,
+		SetTitle(fmt.Sprintf(" Pipeline #%d (%s@%s@%s) triggered %s by %s ", opts.Commit.LastPipeline.ID,
+			opts.ProjectID, opts.RefName, opts.Commit.LastPipeline.SHA[0:7],
 			utils.TimeToPrettyTimeAgo(*opts.Commit.LastPipeline.CreatedAt), opts.PipelineUser.Name))
 
 	jobsCh := make(chan []*ViewJob)
