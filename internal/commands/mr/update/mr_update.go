@@ -365,7 +365,7 @@ func NewCmdUpdate(f cmdutils.Factory) *cobra.Command {
 		BoolP("squash-before-merge", "", false, "Toggles the option to squash commits into a single commit when merging.")
 	mrUpdateCmd.Flags().BoolP("remove-source-branch", "", false, "Toggles the removal of the source branch on merge.")
 	mrUpdateCmd.Flags().StringP("milestone", "m", "", "Title of the milestone to assign. Set to \"\" or 0 to unassign.")
-	mrUpdateCmd.Flags().String("target-branch", "", "Set target branch.")
+	mrUpdateCmd.Flags().StringP("target-branch", "b", "", "Set target branch.")
 
 	// Add new autofill flags
 	mrUpdateCmd.Flags().BoolP("fill", "f", false, "Do not prompt for title or body, and just use commit info.")
