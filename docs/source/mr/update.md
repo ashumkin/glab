@@ -74,7 +74,7 @@ glab mr update 23 --attach ./screenshot.png
       --reviewer strings          Request review from users by their usernames. Prefix with '!' or '-' to remove from existing reviewers, '+' to add. Otherwise, replace existing reviewers with given users. Multiple usernames can be comma-separated or specified by repeating the flag.
       --squash-before-merge       Toggles the option to squash commits into a single commit when merging.
       --state string              Filter by state when selecting a merge request by branch: opened, closed, merged, locked, any. Ignored for IDs and URLs. (default "any")
-      --target-branch string      Set target branch.
+  -b, --target-branch string      Set target branch.
   -t, --title string              Title of merge request.
       --unassign                  Unassign all users.
   -u, --unlabel strings           Remove labels.
