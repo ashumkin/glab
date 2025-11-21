@@ -128,12 +128,24 @@ func MRState(c *iostreams.ColorPalette, m *gitlab.BasicMergeRequest) string {
 	}
 }
 
-func DisplayAllMRs(streams *iostreams.IOStreams, mrs []*gitlab.BasicMergeRequest) string {
+func DisplayAllMRs(streams *iostreams.IOStreams, mrs []*gitlab.BasicMergeRequest, mrApprovals map[int]*gitlab.MergeRequestApprovals) string {
 	c := streams.Color()
 	table := tableprinter.NewTablePrinter()
 	table.SetIsTTY(streams.IsOutputTTY())
 	for _, m := range mrs {
+		appr, ok := mrApprovals[m.IID]
+		var aprState string
+		if ok {
+			if len(appr.ApprovedBy) > 0 {
+				aprState = streams.Color().GreenCheck()
+			} else {
+				aprState = streams.Color().FailedIcon()
+			}
+		} else {
+			aprState = streams.Color().Yellow("?")
+		}
 		table.AddCell(streams.Hyperlink(MRState(c, m), m.WebURL))
+		table.AddCell(aprState)
 		table.AddCell(m.References.Full)
 		table.AddCell(m.Title)
 		table.AddCell(c.Cyan(fmt.Sprintf("(%s) ← (%s)", m.TargetBranch, m.SourceBranch)))

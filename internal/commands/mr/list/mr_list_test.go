@@ -121,8 +121,8 @@ func TestMergeRequestList_tty(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 		Showing 2 open merge requests on OWNER/REPO. (Page 1)
 
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
-		!7	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!7	?	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
 
 	`), output.String())
 	assert.Equal(t, ``, output.Stderr())
@@ -230,8 +230,8 @@ func TestMergeRequestList_tty_withFlags(t *testing.T) {
 		assert.Equal(t, heredoc.Doc(`
 		Showing 2 open merge requests in OWNER/REPO that match your search. (Page 1)
 
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
-		!7	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!7	?	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
 
 	`), output.String())
 	})
@@ -265,13 +265,13 @@ func TestMergeRequestList_hyperlinks(t *testing.T) {
 	t.Setenv("NO_COLOR", "true")
 
 	noHyperlinkCells := [][]string{
-		{"!6", "OWNER/REPO/merge_requests/6", "MergeRequest one", "(master) ← (test1)"},
-		{"!7", "OWNER/REPO/merge_requests/7", "MergeRequest two", "(master) ← (test2)"},
+		{"!6", "?", "OWNER/REPO/merge_requests/6", "MergeRequest one", "(master) ← (test1)"},
+		{"!7", "?", "OWNER/REPO/merge_requests/7", "MergeRequest two", "(master) ← (test2)"},
 	}
 
 	hyperlinkCells := [][]string{
-		{makeHyperlink("!6", "http://gitlab.com/OWNER/REPO/merge_requests/6"), "OWNER/REPO/merge_requests/6", "MergeRequest one", "(master) ← (test1)"},
-		{makeHyperlink("!7", "http://gitlab.com/OWNER/REPO/merge_requests/7"), "OWNER/REPO/merge_requests/7", "MergeRequest two", "(master) ← (test2)"},
+		{makeHyperlink("!6", "http://gitlab.com/OWNER/REPO/merge_requests/6"), "?", "OWNER/REPO/merge_requests/6", "MergeRequest one", "(master) ← (test1)"},
+		{makeHyperlink("!7", "http://gitlab.com/OWNER/REPO/merge_requests/7"), "?", "OWNER/REPO/merge_requests/7", "MergeRequest two", "(master) ← (test2)"},
 	}
 
 	type hyperlinkTest struct {
@@ -433,7 +433,7 @@ func TestMergeRequestList_labels(t *testing.T) {
 				t.Errorf("error running command `issue list %s`: %v", test.cli, err)
 			}
 
-			assert.Contains(t, output.String(), "!6	OWNER/REPO/merge_requests/6")
+			assert.Contains(t, output.String(), "!6\t?\tOWNER/REPO/merge_requests/6")
 			assert.Empty(t, output.Stderr())
 		})
 	}
@@ -510,7 +510,7 @@ func TestMergeRequestList_GroupAndReviewer(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 		Showing 1 open merge request on GROUP. (Page 1)
 
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
 
 	`), output.String())
 	assert.Equal(t, ``, output.Stderr())
@@ -563,7 +563,7 @@ func TestMergeRequestList_GroupAndAssignee(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 		Showing 1 open merge request on GROUP. (Page 1)
 
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
 
 	`), output.String())
 	assert.Equal(t, ``, output.Stderr())
@@ -644,8 +644,8 @@ func TestMergeRequestList_GroupWithAssigneeAndReviewer(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 		Showing 2 open merge requests on GROUP. (Page 1)
 
-		!7	OWNER/REPO/merge_requests/7	MergeRequest one	(master) ← (test2)
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!7	?	OWNER/REPO/merge_requests/7	MergeRequest one	(master) ← (test2)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
 
 	`), output.String())
 	assert.Equal(t, ``, output.Stderr())
@@ -717,8 +717,8 @@ func TestMergeRequestList_SortAndOrderBy(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 	Showing 2 open merge requests in OWNER/REPO that match your search. (Page 1)
 
-	!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
-	!7	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
+	!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+	!7	?	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
 
 	`), output.String())
 }
