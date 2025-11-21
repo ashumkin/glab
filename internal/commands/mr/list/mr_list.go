@@ -1,6 +1,7 @@
 package list
 
 import (
+	"sync"
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -334,9 +335,11 @@ func (o *options) run() error {
 		l.Environment = new(o.environment)
 	}
 
+	var mrApprovals map[int64]*gitlab.MergeRequestApprovals
 	if o.group != "" {
 		mergeRequests, err = api.ListGroupMRs(client, o.group, projectListMROptionsToGroup(l), api.WithMRAssignees(assigneeIds), api.WithMRReviewers(reviewerIds))
 		title.RepoName = o.group
+		mrApprovals = o.listMRApprovals(client, mergeRequests)
 	} else {
 		var repo glrepo.Interface
 		repo, err = o.baseRepo()
@@ -346,6 +349,7 @@ func (o *options) run() error {
 
 		title.RepoName = repo.FullName()
 		mergeRequests, err = api.ListMRs(client, repo.FullName(), l, api.WithMRAssignees(assigneeIds), api.WithMRReviewers(reviewerIds))
+		mrApprovals = o.listMRApprovals(client, mergeRequests)
 	}
 	if err != nil {
 		return err
@@ -362,9 +366,31 @@ func (o *options) run() error {
 			return err
 		}
 		defer o.io.StopPager()
-		o.io.LogInfof("%s\n%s\n", title.Describe(), mrutils.DisplayAllMRs(o.io, mergeRequests))
+		o.io.LogInfof("%s\n%s\n", title.Describe(), mrutils.DisplayAllMRs(o.io, mergeRequests, mrApprovals))
 	}
 	return nil
+}
+
+func (o *options) listMRApprovals(client *gitlab.Client, mergeRequests []*gitlab.BasicMergeRequest) map[int64]*gitlab.MergeRequestApprovals {
+	mrApprovals := make(map[int64]*gitlab.MergeRequestApprovals, len(mergeRequests))
+	wg := sync.WaitGroup{}
+	mx := sync.Mutex{}
+	for _, mr := range mergeRequests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mrA, _, err := client.MergeRequests.GetMergeRequestApprovals(mr.ProjectID, mr.IID)
+			if err != nil && mrA == nil {
+				return
+			}
+			mx.Lock()
+			defer mx.Unlock()
+			mrApprovals[mr.IID] = mrA
+		}()
+	}
+	wg.Wait()
+
+	return mrApprovals
 }
 
 func projectListMROptionsToGroup(l *gitlab.ListProjectMergeRequestsOptions) *gitlab.ListGroupMergeRequestsOptions {

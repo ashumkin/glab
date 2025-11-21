@@ -3,6 +3,7 @@ package mrutils
 import (
 	"fmt"
 	"io"
+	"time"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
 
@@ -68,7 +69,7 @@ func PrintDiscussions(out io.Writer, ios *iostreams.IOStreams, discussions []*gi
 			// Show resolution status if resolvable
 			if firstNote.Resolvable {
 				if firstNote.Resolved {
-					fmt.Fprint(out, c.Green(" ✓ resolved")) //nolint:forbidigo // out is a generic io.Writer also used with non-stdout writers (strings.Builder, bytes.Buffer)
+					fmt.Fprint(out, c.Green(" ✓ resolved"), " (", firstNote.ResolvedBy.Username, " at ", firstNote.ResolvedAt.Format(time.DateTime), ")") //nolint:forbidigo // out is a generic io.Writer also used with non-stdout writers (strings.Builder, bytes.Buffer)
 				} else {
 					fmt.Fprint(out, c.Yellow(" ⚠ unresolved")) //nolint:forbidigo // out is a generic io.Writer also used with non-stdout writers (strings.Builder, bytes.Buffer)
 				}
@@ -110,7 +111,8 @@ func PrintDiscussions(out io.Writer, ios *iostreams.IOStreams, discussions []*gi
 			createdAt := noteTimeAgo(note)
 			fmt.Fprint(out, "@", noteUsername(note)) //nolint:forbidigo // out is a generic io.Writer also used with non-stdout writers (strings.Builder, bytes.Buffer)
 			if note.System {
-				fmt.Fprintf(out, " %s ", note.Body)  //nolint:forbidigo // out is a generic io.Writer also used with non-stdout writers (strings.Builder, bytes.Buffer)
+				body, _ := utils.RenderMarkdown(note.Body, ios.BackgroundColor())
+				fmt.Fprintf(out, " %s ", body)       //nolint:forbidigo // out is a generic io.Writer also used with non-stdout writers (strings.Builder, bytes.Buffer)
 				fmt.Fprintln(out, c.Gray(createdAt)) //nolint:forbidigo // out is a generic io.Writer also used with non-stdout writers (strings.Builder, bytes.Buffer)
 			} else {
 				body := renderBody(ios, note.Body)
