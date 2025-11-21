@@ -58,6 +58,13 @@ func TestMergeRequestList_tty(t *testing.T) {
 	testClient := gitlabtesting.NewTestClient(t)
 
 	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(1), int64(6)).
+		Return(nil, nil, nil)
+	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(1), int64(7)).
+		Return(nil, nil, nil)
+
+	testClient.MockMergeRequests.EXPECT().
 		ListProjectMergeRequests("OWNER/REPO", gomock.Any()).
 		Return([]*gitlab.BasicMergeRequest{
 			{
@@ -120,8 +127,8 @@ func TestMergeRequestList_tty(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 		Showing 2 open merge requests on OWNER/REPO. (Page 1)
 
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
-		!7	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!7	?	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
 
 	`), output.String())
 	assert.Empty(t, output.Stderr())
@@ -214,6 +221,13 @@ func TestMergeRequestList_tty_withFlags(t *testing.T) {
 		testClient := gitlabtesting.NewTestClient(t)
 
 		testClient.MockMergeRequests.EXPECT().
+			GetMergeRequestApprovals(int64(1), int64(6)).
+			Return(nil, nil, nil)
+		testClient.MockMergeRequests.EXPECT().
+			GetMergeRequestApprovals(int64(1), int64(7)).
+			Return(nil, nil, nil)
+
+		testClient.MockMergeRequests.EXPECT().
 			ListProjectMergeRequests("OWNER/REPO", gomock.Any()).
 			DoAndReturn(func(pid any, opts *gitlab.ListProjectMergeRequestsOptions, options ...gitlab.RequestOptionFunc) ([]*gitlab.BasicMergeRequest, *gitlab.Response, error) {
 				// Verify draft filter is passed
@@ -278,8 +292,8 @@ func TestMergeRequestList_tty_withFlags(t *testing.T) {
 		assert.Equal(t, heredoc.Doc(`
 		Showing 2 open merge requests in OWNER/REPO that match your search. (Page 1)
 
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
-		!7	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!7	?	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
 
 	`), output.String())
 	})
@@ -327,13 +341,13 @@ func TestMergeRequestList_hyperlinks(t *testing.T) {
 	t.Setenv("NO_COLOR", "true")
 
 	noHyperlinkCells := [][]string{
-		{"!6", "OWNER/REPO/merge_requests/6", "MergeRequest one", "(master) ← (test1)"},
-		{"!7", "OWNER/REPO/merge_requests/7", "MergeRequest two", "(master) ← (test2)"},
+		{"!6", "?", "OWNER/REPO/merge_requests/6", "MergeRequest one", "(master) ← (test1)"},
+		{"!7", "?", "OWNER/REPO/merge_requests/7", "MergeRequest two", "(master) ← (test2)"},
 	}
 
 	hyperlinkCells := [][]string{
-		{makeHyperlink("!6", "http://gitlab.com/OWNER/REPO/merge_requests/6"), "OWNER/REPO/merge_requests/6", "MergeRequest one", "(master) ← (test1)"},
-		{makeHyperlink("!7", "http://gitlab.com/OWNER/REPO/merge_requests/7"), "OWNER/REPO/merge_requests/7", "MergeRequest two", "(master) ← (test2)"},
+		{makeHyperlink("!6", "http://gitlab.com/OWNER/REPO/merge_requests/6"), "?", "OWNER/REPO/merge_requests/6", "MergeRequest one", "(master) ← (test1)"},
+		{makeHyperlink("!7", "http://gitlab.com/OWNER/REPO/merge_requests/7"), "?", "OWNER/REPO/merge_requests/7", "MergeRequest two", "(master) ← (test2)"},
 	}
 
 	type hyperlinkTest struct {
@@ -400,6 +414,13 @@ func TestMergeRequestList_hyperlinks(t *testing.T) {
 	for _, tc := range tests {
 		t.Run("", func(t *testing.T) {
 			testClient := gitlabtesting.NewTestClient(t)
+
+			testClient.MockMergeRequests.EXPECT().
+				GetMergeRequestApprovals(int64(1), int64(6)).
+				Return(nil, nil, nil)
+			testClient.MockMergeRequests.EXPECT().
+				GetMergeRequestApprovals(int64(1), int64(7)).
+				Return(nil, nil, nil)
 
 			testClient.MockMergeRequests.EXPECT().
 				ListProjectMergeRequests("OWNER/REPO", gomock.Any()).
@@ -506,6 +527,10 @@ func TestMergeRequestList_labels(t *testing.T) {
 			testClient := gitlabtesting.NewTestClient(t)
 
 			testClient.MockMergeRequests.EXPECT().
+				GetMergeRequestApprovals(int64(1), int64(6)).
+				Return(nil, nil, nil)
+
+			testClient.MockMergeRequests.EXPECT().
 				ListProjectMergeRequests("OWNER/REPO", gomock.Any()).
 				DoAndReturn(func(pid any, opts *gitlab.ListProjectMergeRequestsOptions, options ...gitlab.RequestOptionFunc) ([]*gitlab.BasicMergeRequest, *gitlab.Response, error) {
 					if tc.expectLabels != nil {
@@ -535,7 +560,7 @@ func TestMergeRequestList_labels(t *testing.T) {
 			output, err := exec(tc.cli)
 			require.NoError(t, err)
 
-			assert.Contains(t, output.String(), "!6\tOWNER/REPO/merge_requests/6")
+			assert.Contains(t, output.String(), "!6\t?\tOWNER/REPO/merge_requests/6")
 			assert.Empty(t, output.Stderr())
 		})
 	}
@@ -636,6 +661,13 @@ func TestMrListJSON(t *testing.T) {
 	}
 
 	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(29316529), int64(1)).
+		Return(nil, nil, nil)
+	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(29316529), int64(4)).
+		Return(nil, nil, nil)
+
+	testClient.MockMergeRequests.EXPECT().
 		ListProjectMergeRequests("OWNER/REPO", gomock.Any()).
 		Return(testMRs, nil, nil)
 
@@ -671,6 +703,10 @@ func TestMergeRequestList_GroupAndReviewer(t *testing.T) {
 	t.Setenv("NO_COLOR", "true")
 
 	testClient := gitlabtesting.NewTestClient(t)
+
+	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(1), int64(6)).
+		Return(nil, nil, nil)
 
 	// Mock CurrentUser for @me lookup
 	testClient.MockUsers.EXPECT().
@@ -723,7 +759,7 @@ func TestMergeRequestList_GroupAndReviewer(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 		Showing 1 open merge request on GROUP. (Page 1)
 
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
 
 	`), output.String())
 	assert.Empty(t, output.Stderr())
@@ -734,6 +770,10 @@ func TestMergeRequestList_GroupAndAssignee(t *testing.T) {
 	t.Setenv("NO_COLOR", "true")
 
 	testClient := gitlabtesting.NewTestClient(t)
+
+	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(1), int64(6)).
+		Return(nil, nil, nil)
 
 	// Mock CurrentUser for @me lookup
 	testClient.MockUsers.EXPECT().
@@ -786,7 +826,7 @@ func TestMergeRequestList_GroupAndAssignee(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 		Showing 1 open merge request on GROUP. (Page 1)
 
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
 
 	`), output.String())
 	assert.Empty(t, output.Stderr())
@@ -797,6 +837,13 @@ func TestMergeRequestList_GroupWithAssigneeAndReviewer(t *testing.T) {
 	t.Setenv("NO_COLOR", "true")
 
 	testClient := gitlabtesting.NewTestClient(t)
+
+	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(1), int64(6)).
+		Return(nil, nil, nil)
+	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(2), int64(7)).
+		Return(nil, nil, nil)
 
 	// Mock ListUsers for reviewer lookup (some.user -> ID 2)
 	testClient.MockUsers.EXPECT().
@@ -882,8 +929,8 @@ func TestMergeRequestList_GroupWithAssigneeAndReviewer(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 		Showing 2 open merge requests on GROUP. (Page 1)
 
-		!7	OWNER/REPO/merge_requests/7	MergeRequest one	(master) ← (test2)
-		!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+		!7	?	OWNER/REPO/merge_requests/7	MergeRequest one	(master) ← (test2)
+		!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
 
 	`), output.String())
 	assert.Empty(t, output.Stderr())
@@ -894,6 +941,13 @@ func TestMergeRequestList_SortAndOrderBy(t *testing.T) {
 	t.Setenv("NO_COLOR", "true")
 
 	testClient := gitlabtesting.NewTestClient(t)
+
+	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(1), int64(6)).
+		Return(nil, nil, nil)
+	testClient.MockMergeRequests.EXPECT().
+		GetMergeRequestApprovals(int64(1), int64(7)).
+		Return(nil, nil, nil)
 
 	testClient.MockMergeRequests.EXPECT().
 		ListProjectMergeRequests("OWNER/REPO", gomock.Any()).
@@ -961,8 +1015,8 @@ func TestMergeRequestList_SortAndOrderBy(t *testing.T) {
 	assert.Equal(t, heredoc.Doc(`
 	Showing 2 open merge requests in OWNER/REPO that match your search. (Page 1)
 
-	!6	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
-	!7	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
+	!6	?	OWNER/REPO/merge_requests/6	MergeRequest one	(master) ← (test1)
+	!7	?	OWNER/REPO/merge_requests/7	MergeRequest two	(master) ← (test2)
 
 	`), output.String())
 }
@@ -1085,6 +1139,7 @@ func TestMergeRequestList_SingleUserPreservesAPIOrder(t *testing.T) {
 				for i := range mrs {
 					created := time.Date(2026, time.October, i+1, 0, 0, 0, 0, time.UTC)
 					mrs[i] = &gitlab.BasicMergeRequest{ID: int64(i + 1), IID: int64(i + 1), CreatedAt: &created}
+					testClient.MockMergeRequests.EXPECT().GetMergeRequestApprovals(int64(0), mrs[i].IID).Return(nil, nil, nil)
 				}
 				if group {
 					testClient.MockMergeRequests.EXPECT().ListGroupMergeRequests("GROUP", gomock.Any()).
@@ -1125,6 +1180,7 @@ func TestMergeRequestList_SingleUserPreservesAPIOrder(t *testing.T) {
 
 func TestMergeRequestList_NilReferences(t *testing.T) {
 	testClient := gitlabtesting.NewTestClient(t)
+	testClient.MockMergeRequests.EXPECT().GetMergeRequestApprovals(int64(0), int64(76)).Return(nil, nil, nil)
 
 	testClient.MockMergeRequests.EXPECT().
 		ListProjectMergeRequests("OWNER/REPO", gomock.Any()).
@@ -1150,6 +1206,6 @@ func TestMergeRequestList_NilReferences(t *testing.T) {
 
 	output, err := exec("")
 	require.NoError(t, err)
-	assert.Equal(t, "Showing 1 open merge request on OWNER/REPO. (Page 1)\n\n!76\t\ttest mr with nil references\t(main) ← (feature-branch)\n\n", output.String())
+	assert.Equal(t, "Showing 1 open merge request on OWNER/REPO. (Page 1)\n\n!76\t?\t\ttest mr with nil references\t(main) ← (feature-branch)\n\n", output.String())
 	assert.Empty(t, output.Stderr())
 }

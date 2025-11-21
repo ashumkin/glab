@@ -67,11 +67,11 @@ func Test_PrintDiscussions(t *testing.T) {
 				ID:             "system12deadbeef1234567890abcdef12345678",
 				IndividualNote: true,
 				Notes: []*gitlab.Note{
-					{ID: 104, Body: "changed status", System: true, Author: gitlab.NoteAuthor{Username: "bot"}},
+					{ID: 104, Body: "**changed status**", System: true, Author: gitlab.NoteAuthor{Username: "bot"}},
 				},
 			},
 			options:     PrintDiscussionsOptions{ShowSystemLogs: true, ShowSingleNoteDiscussionPrefix: true},
-			contains:    "@bot changed status",
+			contains:    "@bot \n  **changed status**",
 			notContains: "[discussion:",
 		},
 		{

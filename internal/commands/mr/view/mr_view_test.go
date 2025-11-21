@@ -188,7 +188,7 @@ func TestMRView(t *testing.T) {
 		require.Contains(t, out, "merge: feature-branch → main")
 		require.Empty(t, outErr)
 		assert.Contains(t, out, "https://gitlab.com/cli-automated-testing/test/-/merge_requests/13")
-		assert.Contains(t, out, "johnwick Marked MR as ready")
+		assert.Contains(t, out, "johnwick \n  Marked MR as ready")
 		assert.NotContains(t, out, "[discussion:")
 	})
 
@@ -404,7 +404,7 @@ func Test_rawMRPreview(t *testing.T) {
 				"url:\thttps://gitlab.com/OWNER/REPO/-/merge_requests/503",
 				"--",
 				"MR description",
-				"@bob assigned to @alice",
+				"@bob \n  assigned to @alice",
 				"@bob commented",
 				"[note #100]",
 				"Some comment",
