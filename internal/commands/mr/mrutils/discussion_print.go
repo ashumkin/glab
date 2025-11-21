@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"time"
 
 	gitlab "gitlab.com/gitlab-org/api/client-go/v2"
 
@@ -54,7 +55,7 @@ func PrintDiscussionsTTY(out io.Writer, ios *iostreams.IOStreams, discussions []
 			// Show resolution status if resolvable
 			if firstNote.Resolvable {
 				if firstNote.Resolved {
-					fmt.Fprint(out, c.Green(" ✓ resolved"))
+					fmt.Fprint(out, c.Green(" ✓ resolved"), " (", firstNote.ResolvedBy.Username, " at ", firstNote.ResolvedAt.Format(time.DateTime), ")")
 				} else {
 					fmt.Fprint(out, c.Yellow(" ⚠ unresolved"))
 				}
@@ -96,7 +97,8 @@ func PrintDiscussionsTTY(out io.Writer, ios *iostreams.IOStreams, discussions []
 			createdAt := noteTimeAgo(note)
 			fmt.Fprint(out, "@", noteUsername(note))
 			if note.System {
-				fmt.Fprintf(out, " %s ", note.Body)
+				body, _ := utils.RenderMarkdown(note.Body, ios.BackgroundColor())
+				fmt.Fprintf(out, " %s ", body)
 				fmt.Fprintln(out, c.Gray(createdAt))
 			} else {
 				body, _ := utils.RenderMarkdown(note.Body, ios.BackgroundColor())
