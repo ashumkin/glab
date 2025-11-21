@@ -463,10 +463,10 @@ func rebaseMR(ctx context.Context, ios *iostreams.IOStreams, apiClient *gitlab.C
 	return fmt.Errorf("timed out waiting for the rebase of merge request !%d to complete", mr.IID)
 }
 
+const approvedIcon = "👍"
+
 // PrintMRApprovalState renders an output to summarize the approval state of a merge request
 func PrintMRApprovalState(ios *iostreams.IOStreams, mrApprovals *gitlab.MergeRequestApprovalState) {
-	const approvedIcon = "👍"
-
 	c := ios.Color()
 
 	if mrApprovals.ApprovalRulesOverwritten {
@@ -514,6 +514,28 @@ func PrintMRApprovalState(ios *iostreams.IOStreams, mrApprovals *gitlab.MergeReq
 		}
 		ios.LogInfo(table)
 	}
+}
+
+// PrintMRApprovalState renders an output to summarize the approval state of a merge request
+func PrintMRApprovals(ios *iostreams.IOStreams, mrApprovals *gitlab.MergeRequestApprovals) {
+	approvedBy := map[string]*gitlab.BasicUser{}
+	for _, by := range mrApprovals.ApprovedBy {
+		approvedBy[by.User.Name] = by.User
+	}
+
+	// sort all usernames to ensure consistent output
+	approverNames := make([]string, 0, len(mrApprovals.ApprovedBy))
+	for name := range approvedBy {
+		approverNames = append(approverNames, name)
+	}
+	sort.Strings(approverNames)
+
+	table := tableprinter.NewTablePrinter()
+	for _, name := range approverNames {
+		approver := approvedBy[name]
+		table.AddRow(approver.Name, approver.Username, approvedIcon)
+	}
+	fmt.Fprintln(ios.StdOut, table)
 }
 
 // AutofillMRFromCommits generates title and body from commit information between two branches
