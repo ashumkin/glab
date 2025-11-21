@@ -77,7 +77,7 @@ func NewCmdList(f cmdutils.Factory, runE func(opts *options) error) *cobra.Comma
 		},
 		Example: heredoc.Doc(`
 			$ glab mr list --all
-			$ glab mr ls -a
+			$ glab mr ls -A
 			$ glab mr list --assignee=@me
 			$ glab mr list --reviewer=@me
 			$ glab mr list --source-branch=new-feature

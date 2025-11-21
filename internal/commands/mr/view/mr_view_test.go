@@ -366,7 +366,7 @@ func Test_rawMRPreview(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			want := strings.Join(tt.want, "\n") + "\n"
-			got := rawMRPreview(tt.opts, tt.mr, tt.notes)
+			got := rawMRPreview(tt.opts, tt.mr, nil, tt.notes)
 
 			require.Equal(t, want, got)
 		})
@@ -615,7 +615,7 @@ func Test_printTTYMRPreview_closedMRWithNilClosedBy(t *testing.T) {
 	}
 
 	// This should not panic - the bug would cause a nil pointer dereference here
-	printTTYMRPreview(opts, mr, nil, []*gitlab.Note{})
+	printTTYMRPreview(opts, mr, nil, nil, []*gitlab.Note{})
 	output := stdout.String()
 
 	// Verify that it contains "Closed" but not "Closed by:" since ClosedBy is nil
