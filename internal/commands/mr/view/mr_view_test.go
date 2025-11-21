@@ -315,6 +315,8 @@ func Test_rawMRPreview(t *testing.T) {
 				"labels:\tlabel1, label2",
 				"assignees:\talice, bob",
 				"reviewers:\tjohn, paul",
+				"approved:\tx",
+				"approvers:\t",
 				"comments:\t2",
 				"milestone:\tSome milestone",
 				"number:\t503",
@@ -339,6 +341,8 @@ func Test_rawMRPreview(t *testing.T) {
 				"labels:\tlabel1, label2",
 				"assignees:\talice, bob",
 				"reviewers:\tjohn, paul",
+				"approved:\tx",
+				"approvers:\t",
 				"comments:\t2",
 				"milestone:\tSome milestone",
 				"number:\t503",
@@ -365,6 +369,8 @@ func Test_rawMRPreview(t *testing.T) {
 				"labels:\tlabel1, label2",
 				"assignees:\talice, bob",
 				"reviewers:\tjohn, paul",
+				"approved:\tx",
+				"approvers:\t",
 				"comments:\t2",
 				"milestone:\tSome milestone",
 				"number:\t503",
@@ -387,7 +393,7 @@ func Test_rawMRPreview(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			want := strings.Join(tt.want, "\n") + "\n"
-			got := rawMRPreview(tt.opts, tt.mr, tt.discussions)
+			got := rawMRPreview(tt.opts, tt.mr, nil, tt.discussions)
 
 			require.Equal(t, want, got)
 		})
@@ -556,7 +562,7 @@ func Test_printTTYMRPreview_closedMRWithNilClosedBy(t *testing.T) {
 	}
 
 	// This should not panic - the bug would cause a nil pointer dereference here
-	printTTYMRPreview(opts, mr, nil, []*gitlab.Discussion{})
+	printTTYMRPreview(opts, mr, nil, nil, []*gitlab.Discussion{})
 	output := stdout.String()
 
 	// Verify that it contains "Closed" but not "Closed by:" since ClosedBy is nil

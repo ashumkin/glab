@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -35,8 +36,17 @@ type options struct {
 	config       func() config.Config
 }
 
-type MRWithDiscussions struct {
+type MergeRequestApprovals struct {
+	ApprovedBy []*gitlab.MergeRequestApproverUser `json:"approved_by"`
+}
+
+type MRWithApprovals struct {
 	*gitlab.MergeRequest
+	Approvals MergeRequestApprovals `json:"approvals"`
+}
+
+type MRWithDiscussions struct {
+	*MRWithApprovals
 	Discussions []*gitlab.Discussion
 }
 
@@ -95,7 +105,7 @@ func (o *options) run(ctx context.Context, f cmdutils.Factory, args []string) er
 	// does not provide the necessary ability to determine if this value was present or not in the response JSON
 	// since Project.ApprovalsBeforeMerge is a non-pointer type. Because of this, this step will either succeed
 	// and show approval state or it will fail silently
-	mrApprovals, _, err := client.MergeRequestApprovals.GetApprovalState(baseRepo.FullName(), mr.IID) //nolint:ineffassign,staticcheck
+	mrApprovalsState, _, err := client.MergeRequestApprovals.GetApprovalState(baseRepo.FullName(), mr.IID) //nolint:ineffassign,staticcheck
 
 	cfg := o.config()
 
@@ -151,13 +161,14 @@ func (o *options) run(ctx context.Context, f cmdutils.Factory, args []string) er
 	}
 	defer o.io.StopPager()
 
+	mrApprovals, _, err := client.MergeRequests.GetMergeRequestApprovals(baseRepo.FullName(), mr.IID) //nolint:ineffassign,staticcheck
 	switch {
 	case o.outputFormat == "json":
-		printJSONMR(o, mr, discussions)
+		printJSONMR(o, mr, mrApprovals, discussions)
 	case o.io.IsOutputTTY():
-		printTTYMRPreview(o, mr, mrApprovals, discussions)
+		printTTYMRPreview(o, mr, mrApprovalsState, mrApprovals, discussions)
 	default:
-		printRawMRPreview(o, mr, discussions)
+		printRawMRPreview(o, mr, mrApprovals, discussions)
 	}
 	return nil
 }
@@ -202,7 +213,7 @@ func mrState(c *iostreams.ColorPalette, mr *gitlab.MergeRequest) string {
 	}
 }
 
-func printTTYMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovals *gitlab.MergeRequestApprovalState, discussions []*gitlab.Discussion) {
+func printTTYMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovalState *gitlab.MergeRequestApprovalState, mrApprovals *gitlab.MergeRequestApprovals, discussions []*gitlab.Discussion) {
 	c := opts.io.Color()
 	out := opts.io.StdOut
 	mrTimeAgo := utils.TimeToPrettyTimeAgo(*mr.CreatedAt)
@@ -263,8 +274,12 @@ func printTTYMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovals *gitl
 		}
 	}
 	if mrApprovals != nil {
+		fmt.Fprintln(out, c.Bold("Approve status:"))
+		mrutils.PrintMRApprovals(opts.io, mrApprovals)
+	}
+	if mrApprovalState != nil {
 		fmt.Fprintln(out, c.Bold("Approvals status:"))
-		mrutils.PrintMRApprovalState(opts.io, mrApprovals)
+		mrutils.PrintMRApprovalState(opts.io, mrApprovalState)
 	}
 	fmt.Fprintf(out, "%s This merge request has %s changes.\n", c.GreenCheck(), c.Yellow(mr.ChangesCount))
 	if mr.State == "merged" && mr.MergedBy != nil { //nolint:staticcheck
@@ -300,11 +315,11 @@ func printTTYMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovals *gitl
 	fmt.Fprintf(out, c.Gray("View this merge request on GitLab: %s\n"), mr.WebURL)
 }
 
-func printRawMRPreview(opts *options, mr *gitlab.MergeRequest, discussions []*gitlab.Discussion) {
-	fmt.Fprint(opts.io.StdOut, rawMRPreview(opts, mr, discussions))
+func printRawMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovals *gitlab.MergeRequestApprovals, discussions []*gitlab.Discussion) {
+	fmt.Fprint(opts.io.StdOut, rawMRPreview(opts, mr, mrApprovals, discussions))
 }
 
-func rawMRPreview(opts *options, mr *gitlab.MergeRequest, discussions []*gitlab.Discussion) string {
+func rawMRPreview(opts *options, mr *gitlab.MergeRequest, mrAppprovals *gitlab.MergeRequestApprovals, discussions []*gitlab.Discussion) string {
 	var out strings.Builder
 
 	assignees := assigneesList(mr)
@@ -317,6 +332,19 @@ func rawMRPreview(opts *options, mr *gitlab.MergeRequest, discussions []*gitlab.
 	fmt.Fprintf(&out, "labels:\t%s\n", labels)
 	fmt.Fprintf(&out, "assignees:\t%s\n", assignees)
 	fmt.Fprintf(&out, "reviewers:\t%s\n", reviewers)
+	var approvers []string
+	if mrAppprovals != nil {
+		for _, by := range mrAppprovals.ApprovedBy {
+			approvers = append(approvers, by.User.Name)
+		}
+	}
+	sort.Strings(approvers)
+	approved := opts.io.Color().FailedIcon()
+	if mrAppprovals != nil && len(mrAppprovals.ApprovedBy) > 0 {
+		approved = opts.io.Color().GreenCheck()
+	}
+	fmt.Fprintf(&out, "approved:\t%s\n", approved)
+	fmt.Fprintf(&out, "approvers:\t%s\n", strings.Join(approvers, ","))
 	fmt.Fprintf(&out, "comments:\t%d\n", mr.UserNotesCount)
 	if mr.Milestone != nil {
 		fmt.Fprintf(&out, "milestone:\t%s\n", mr.Milestone.Title)
@@ -333,13 +361,27 @@ func rawMRPreview(opts *options, mr *gitlab.MergeRequest, discussions []*gitlab.
 	return out.String()
 }
 
-func printJSONMR(opts *options, mr *gitlab.MergeRequest, discussions []*gitlab.Discussion) {
+func printJSONMR(opts *options, mr *gitlab.MergeRequest, mrApprovals *gitlab.MergeRequestApprovals, discussions []*gitlab.Discussion) {
+	mrWithApprovals := &MRWithApprovals{
+		MergeRequest: mr,
+		Approvals: MergeRequestApprovals{
+			ApprovedBy: func() []*gitlab.MergeRequestApproverUser {
+				if mrApprovals == nil {
+					return nil
+				}
+				return mrApprovals.ApprovedBy
+			}(),
+		},
+	}
 	if opts.showComments {
-		extendedMR := MRWithDiscussions{mr, discussions}
+		extendedMR := MRWithDiscussions{
+			MRWithApprovals: mrWithApprovals,
+			Discussions:     discussions,
+		}
 		mrJSON, _ := json.Marshal(extendedMR)
 		fmt.Fprintln(opts.io.StdOut, string(mrJSON))
 	} else {
-		mrJSON, _ := json.Marshal(mr)
+		mrJSON, _ := json.Marshal(mrWithApprovals)
 		fmt.Fprintln(opts.io.StdOut, string(mrJSON))
 	}
 }
