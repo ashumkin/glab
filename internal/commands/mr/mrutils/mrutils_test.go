@@ -833,12 +833,12 @@ func Test_DisplayAllMRs(t *testing.T) {
 		},
 	}
 
-	expected := `!1	OWNER/REPO/merge_requests/1	add tests	(main) ← (new-tests)
-!2	OWNER/REPO/merge_requests/2	fix bug	(main) ← (new-feature)
-!1	OWNER/REPO/merge_requests/3	add new feature	(main) ← (new-tests)
+	expected := `!1	?	OWNER/REPO/merge_requests/1	add tests	(main) ← (new-tests)
+!2	?	OWNER/REPO/merge_requests/2	fix bug	(main) ← (new-feature)
+!1	?	OWNER/REPO/merge_requests/3	add new feature	(main) ← (new-tests)
 `
 
-	got := DisplayAllMRs(streams, mrs)
+	got := DisplayAllMRs(streams, mrs, make(map[int64]*gitlab.MergeRequestApprovals))
 	assert.Equal(t, expected, got)
 }
 

@@ -178,7 +178,7 @@ func TestMRView(t *testing.T) {
 		require.Contains(t, out, "mrTitle !13")
 		require.Equal(t, outErr, "")
 		assert.Contains(t, out, "https://gitlab.com/cli-automated-testing/test/-/merge_requests/13")
-		assert.Contains(t, out, "johnwick Marked MR as ready")
+		assert.Contains(t, out, "johnwick \n  Marked MR as ready")
 	})
 
 	t.Run("no_tty", func(t *testing.T) {
