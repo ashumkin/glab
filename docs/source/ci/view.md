@@ -57,6 +57,7 @@ glab ci view -b main -R myusername/myproject
   -i, --interactive      Interactively choose pipeline to view from a list
   -m, --mr               Check pipeline status for a MR. (Default is the current MR)
   -p, --pipelineid int   Check pipeline status for a specific pipeline ID.
+  -t, --tags-only        Get pipelines for tags only (implies --interactive)
   -w, --web              Open pipeline in a browser. Uses the default browser, or the browser specified in the BROWSER environment variable.
 ```
 
