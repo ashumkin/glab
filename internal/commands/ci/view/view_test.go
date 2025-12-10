@@ -1656,6 +1656,29 @@ func TestCIView(t *testing.T) {
 			},
 			expectedErr: assert.Errorf,
 		},
+		{
+			name: "view ci pipeline on web interactively tags only",
+			cli:  "--web --tags-only",
+			setupMock: func(tc *gitlabtesting.TestClient) {
+				tc.MockPipelines.EXPECT().
+					ListProjectPipelines("OWNER/REPO",
+						&gitlab.ListProjectPipelinesOptions{
+							ListOptions: gitlab.ListOptions{PerPage: 30, Page: 1},
+							Scope:       gitlab.Ptr("tags"),
+						}, gomock.Any()).
+					Return([]*gitlab.PipelineInfo{
+						{
+							ID:        11,
+							Ref:       "test-branch-tags-only",
+							SHA:       "dc16a9f1b84c20d5af82ead194777652605786b4",
+							Status:    "created",
+							WebURL:    "https://gitlab.com/OWNER/REPO/-/pipelines/11",
+							CreatedAt: &createdAt,
+						},
+					}, nil, nil)
+			},
+			expectedErr: assert.Errorf,
+		},
 	}
 
 	for _, tc := range tests {
