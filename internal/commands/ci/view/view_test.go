@@ -1521,6 +1521,29 @@ func TestCIView(t *testing.T) {
 			},
 			expectedErr: assert.Errorf,
 		},
+		{
+			name: "view ci pipeline on web interactively tags only",
+			cli:  "--web --tags-only",
+			httpMocks: []httpMock{
+				{
+					http.MethodGet,
+
+					"https://gitlab.com/api/v4/projects/OWNER%2FREPO/pipelines?page=1&per_page=30&scope=tags",
+					http.StatusOK,
+					`[
+					{
+						"id": 11,
+						"iid": 124,
+						"web_url": "https://gitlab.com/OWNER/REPO/-/pipelines/11",
+						"project_id": 322,
+						"name": "test-branch-tags-only",
+						"created_at": "2025-10-28T16:52:39.000+01:00",
+						"sha": "dc16a9f1b84c20d5af82ead194777652605786b4"
+					}]`,
+				},
+			},
+			expectedErr: assert.Errorf,
+		},
 	}
 
 	for _, tc := range tests {
