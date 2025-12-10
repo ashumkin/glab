@@ -49,6 +49,7 @@ type options struct {
 	pipelineID    int64
 	forMR         bool
 	interactive   bool
+	tagsOnly      bool
 }
 
 type titler struct {
@@ -191,6 +192,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	pipelineCIView.Flags().BoolVarP(&opts.forMR, "mr", "m", false, "Check pipeline status for a MR. (Default is the current MR)")
 	pipelineCIView.Flags().Int64VarP(&opts.pipelineID, "pipelineid", "p", 0, "Check pipeline status for a specific pipeline ID.")
 	pipelineCIView.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Interactively choose pipeline to view from a list")
+	pipelineCIView.Flags().BoolVarP(&opts.tagsOnly, "tags-only", "t", false, "Get pipelines for tags only (implies --interactive)")
 	pipelineCIView.MarkFlagsMutuallyExclusive("branch", "pipelineid")
 
 	return pipelineCIView
@@ -198,6 +200,10 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 
 func (o *options) complete(args []string) error {
 	if o.interactive {
+		return nil
+	}
+	if o.tagsOnly {
+		o.interactive = true
 		return nil
 	}
 	if o.refName == "" {
@@ -235,7 +241,7 @@ func (o *options) run(ctx context.Context, args []string) error {
 
 	var pipeline *gitlab.Pipeline
 	if o.interactive {
-		pipeline, err = choosePipeline(o.io, client, projectID, repo)
+		pipeline, err = choosePipeline(o.io, client, projectID, repo, o.tagsOnly)
 		if err != nil {
 			return err
 		}
@@ -309,19 +315,22 @@ func (o *options) run(ctx context.Context, args []string) error {
 		if !o.interactive {
 			return nil
 		}
-		pipeline, err = choosePipeline(o.io, client, projectID, repo)
+		pipeline, err = choosePipeline(o.io, client, projectID, repo, o.tagsOnly)
 		if err != nil {
 			return err
 		}
 	}
 }
 
-func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectID string, repo glrepo.Interface) (*gitlab.Pipeline, error) {
+func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectID string, repo glrepo.Interface, tagsOnly bool) (*gitlab.Pipeline, error) {
 	pipelinesOptions := gitlab.ListProjectPipelinesOptions{
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
 			PerPage: 30,
 		},
+	}
+	if tagsOnly {
+		pipelinesOptions.Scope = gitlab.Ptr("tags")
 	}
 
 	pipes, _, err := apiClient.Pipelines.ListProjectPipelines(repo.FullName(), &pipelinesOptions)
