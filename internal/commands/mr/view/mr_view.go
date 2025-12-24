@@ -298,7 +298,8 @@ func printTTYMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovalState *
 				createdAt := utils.TimeToPrettyTimeAgo(*note.CreatedAt)
 				fmt.Fprint(out, note.Author.Username)
 				if note.System {
-					fmt.Fprintf(out, " %s ", note.Body)
+					body, _ := utils.RenderMarkdown(note.Body, opts.io.BackgroundColor())
+					fmt.Fprintf(out, " %s ", body)
 					fmt.Fprintln(out, c.Gray(createdAt))
 				} else {
 					body, _ := utils.RenderMarkdown(note.Body, opts.io.BackgroundColor())
