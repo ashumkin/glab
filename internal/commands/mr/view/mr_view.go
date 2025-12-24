@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"gitlab.com/gitlab-org/cli/internal/mcpannotations"
 
@@ -38,6 +39,7 @@ var listMRNotes = func(client *gitlab.Client, projectID any, mrID int, opts *git
 
 type options struct {
 	showComments   bool
+	hideResolved   bool
 	showSystemLogs bool
 	openInBrowser  bool
 	outputFormat   string
@@ -85,6 +87,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	}
 
 	mrViewCmd.Flags().BoolVarP(&opts.showComments, "comments", "c", false, "Show merge request comments and activities.")
+	mrViewCmd.Flags().BoolVarP(&opts.hideResolved, "hide-resolved", "H", false, "Do not show resolved threads.")
 	mrViewCmd.Flags().BoolVarP(&opts.showSystemLogs, "system-logs", "s", false, "Show system activities and logs.")
 	mrViewCmd.Flags().StringVarP(&opts.outputFormat, "output", "F", "text", "Format output as: text, json.")
 	mrViewCmd.Flags().BoolVarP(&opts.openInBrowser, "web", "w", false, "Open merge request in a browser. Uses default browser or browser specified in BROWSER variable.")
@@ -295,6 +298,9 @@ func printTTYMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovalState *
 				if note.System && !opts.showSystemLogs {
 					continue
 				}
+				if note.Resolved && opts.hideResolved {
+					continue
+				}
 				createdAt := utils.TimeToPrettyTimeAgo(*note.CreatedAt)
 				fmt.Fprint(out, note.Author.Username)
 				if note.System {
@@ -309,6 +315,13 @@ func printTTYMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovalState *
 					// Display file and line context if available
 					if note.Position != nil {
 						printCommentFileContext(out, c, note.Position)
+					}
+					if note.Resolvable {
+						if note.Resolved {
+							fmt.Fprint(out, utils.Indent(fmt.Sprintf("%s %s %s", c.GreenCheck(), note.ResolvedBy.Username, note.ResolvedAt.Format(time.DateTime)), " "))
+						} else {
+							fmt.Fprint(out, utils.Indent(c.FailedIcon(), " "))
+						}
 					}
 
 					fmt.Fprintln(out, utils.Indent(body, " "))
