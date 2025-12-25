@@ -34,6 +34,7 @@ Use arrow keys to navigate jobs and logs.
 - `Ctrl+A` to select manual jobs in the stage of current selected job and after
 - `Ctrl+Backspace` to deselect all jobs.
 - `s` to run (start) selected jobs.
+- `]`,`[` to increase/decrease job titles dynamically.
 - Supports `vi` style bindings and arrow keys for navigating jobs and logs.
 
 Job names too long for their box scroll while the job is selected.
