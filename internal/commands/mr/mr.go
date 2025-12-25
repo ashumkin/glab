@@ -14,7 +14,8 @@ import (
 	mrIssuesCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/issues"
 	mrListCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/list"
 	mrMergeCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/merge"
-	mrNoteCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/note"
+	mrNoteCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/note/create"
+	mrResolveNoteCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/note/resolve"
 	mrRebaseCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/rebase"
 	mrReopenCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/reopen"
 	mrRevokeCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/revoke"
@@ -61,6 +62,7 @@ func NewCmdMR(f cmdutils.Factory) *cobra.Command {
 	mrCmd.AddCommand(mrListCmd.NewCmdList(f, nil))
 	mrCmd.AddCommand(mrMergeCmd.NewCmdMerge(f))
 	mrCmd.AddCommand(mrNoteCmd.NewCmdNote(f))
+	mrCmd.AddCommand(mrResolveNoteCmd.NewCmdNote(f))
 	mrCmd.AddCommand(mrRebaseCmd.NewCmdRebase(f))
 	mrCmd.AddCommand(mrReopenCmd.NewCmdReopen(f))
 	mrCmd.AddCommand(mrRevokeCmd.NewCmdRevoke(f))

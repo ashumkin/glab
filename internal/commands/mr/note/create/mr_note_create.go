@@ -3,6 +3,7 @@ package note
 import (
 	"fmt"
 
+	mrResolveNoteCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/note/resolve"
 	"gitlab.com/gitlab-org/cli/internal/mcpannotations"
 
 	"gitlab.com/gitlab-org/cli/internal/commands/mr/mrutils"
@@ -80,6 +81,8 @@ func NewCmdNote(f cmdutils.Factory) *cobra.Command {
 			return nil
 		},
 	}
+
+	mrCreateNoteCmd.AddCommand(mrResolveNoteCmd.NewCmdNote(f))
 
 	mrCreateNoteCmd.Flags().StringP("message", "m", "", "Comment or note message.")
 	mrCreateNoteCmd.Flags().Bool("unique", false, "Don't create a comment or note if it already exists.")

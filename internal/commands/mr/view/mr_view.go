@@ -288,9 +288,13 @@ func printTTYMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovalState *
 
 	// Comments
 	if opts.showComments {
+		var unresolved string
+		if opts.hideResolved {
+			unresolved = "(Unresolved only)"
+		}
 		fmt.Fprintln(out, heredoc.Doc(`
 			--------------------------------------------
-			Comments / Notes
+			Comments / Notes `+unresolved+`
 			--------------------------------------------
 			`))
 		if len(notes) > 0 {
@@ -309,7 +313,7 @@ func printTTYMRPreview(opts *options, mr *gitlab.MergeRequest, mrApprovalState *
 					fmt.Fprintln(out, c.Gray(createdAt))
 				} else {
 					body, _ := utils.RenderMarkdown(note.Body, opts.io.BackgroundColor())
-					fmt.Fprint(out, " commented ")
+					fmt.Fprint(out, " commented (#", note.ID, ") ")
 					fmt.Fprintf(out, c.Gray("%s\n"), createdAt)
 
 					// Display file and line context if available
