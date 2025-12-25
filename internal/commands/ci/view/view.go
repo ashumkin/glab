@@ -56,20 +56,32 @@ type titler struct {
 	re      *regexp.Regexp
 	replace string
 	maxLen  int
+	horizW  int
 }
 
-func newTitler(find, replace string, maxLen int) *titler {
+func newTitler(find, replace string, maxLen, space int) *titler {
 	if find == "" {
 		find = ".+"
 	}
 	if replace == "" {
 		replace = "$0"
 	}
-	return &titler{re: regexp.MustCompile(find), replace: replace, maxLen: maxLen}
+	return &titler{re: regexp.MustCompile(find), replace: replace, maxLen: maxLen, horizW: space}
 }
 
 func (t titler) getJobTitle(jobName string) string {
 	return t.re.ReplaceAllString(jobName, t.replace)
+}
+
+func (t *titler) decWidth() {
+	t.maxLen--
+	if t.maxLen < 10 {
+		t.maxLen = 10
+	}
+}
+
+func (t *titler) incWidth() {
+	t.maxLen++
 }
 
 type ViewJobKind int64
@@ -133,6 +145,7 @@ func ViewJobFromJob(job *gitlab.Job) *ViewJob {
 }
 
 const defaultTitleMaxLen = 20
+const defaultBoxHSpace = 4
 
 func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	opts := options{
@@ -164,6 +177,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		- %[1]sCtrl+A%[1]s to select manual jobs in the stage of current selected job and after
 		- %[1]sCtrl+Backspace%[1]s to deselect all jobs.
 		- %[1]ss%[1]s to run (start) selected jobs.
+		- %[1]s]%[1]s,%[1]s[%[1]s to increase/decrease job titles dynamically.
 		- Supports %[1]svi%[1]s style bindings and arrow keys for navigating jobs and logs.
 	`, "`"),
 		Annotations: map[string]string{
@@ -415,9 +429,6 @@ func drawView(
 	defer recoverPanic(app)
 
 	var navi navigator
-	appSt := newAppState()
-	app.SetInputCapture(inputCapture(ctx, app, root, &navi, inputCh, forceUpdateCh, pipelines, appSt, o, client))
-	go updateJobs(app, pipelines, jobsCh, forceUpdateCh, appSt, client)
 	cfg := o.config()
 	ff, _ := cfg.Get("", "ci.view.title.match")
 	r, _ := cfg.Get("", "ci.view.title.replace")
@@ -426,7 +437,10 @@ func drawView(
 	if err != nil {
 		titleMaxLen = defaultTitleMaxLen
 	}
-	titlr := newTitler(ff, r, titleMaxLen)
+	titlr := newTitler(ff, r, titleMaxLen, defaultBoxHSpace)
+	appSt := newAppState()
+	app.SetInputCapture(inputCapture(ctx, app, root, &navi, inputCh, forceUpdateCh, pipelines, appSt, titlr, o, client))
+	go updateJobs(app, pipelines, jobsCh, forceUpdateCh, appSt, client)
 	go func() {
 		defer recoverPanic(app)
 		for {
@@ -501,6 +515,7 @@ func inputCapture(
 	forceUpdateCh chan<- bool,
 	pipelines []gitlab.PipelineInfo,
 	appSt *appState,
+	titler *titler,
 	opts *options,
 	apiClient *gitlab.Client,
 ) func(event *tcell.EventKey) *tcell.EventKey {
@@ -538,8 +553,8 @@ func inputCapture(
 			root.SendToFront("jobs-" + appSt.curJob.Name)
 		}
 		event = normalizeCtrlM(event)
-		switch {
-		case event.Rune() == 's':
+		switch event.Rune() {
+		case 's':
 			if appSt.modalVisible || appSt.curJob == nil || appSt.curJob.Kind != Job {
 				break
 			}
@@ -595,6 +610,22 @@ func inputCapture(
 					app.ForceDraw()
 				})
 			root.AddAndSwitchToPage("yesno", modal, false)
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case '[':
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			titler.decWidth()
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case ']':
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			titler.incWidth()
 			inputCh <- struct{}{}
 			app.ForceDraw()
 			return nil
@@ -1215,7 +1246,7 @@ func jobsView(
 		}
 		return
 	}
-	px, _, maxX, maxY := root.GetInnerRect()
+	_, _, maxX, maxY := root.GetInnerRect()
 	var (
 		stages    = 0
 		lastStage = ""
@@ -1234,7 +1265,7 @@ func jobsView(
 	)
 	boxKeys := make(map[string]bool)
 	for _, j := range appSt.jobs {
-		boxX := px + (maxX / stages * stageIdx)
+		boxX := calcBoxX(maxX, stages, stageIdx, titler.maxLen, titler.horizW)
 		if j.Stage != lastStage {
 			stageIdx++
 			lastStage = j.Stage
@@ -1260,7 +1291,7 @@ func jobsView(
 			lastStage = j.Stage
 			stageIdx++
 		}
-		boxX := px + (maxX / stages * stageIdx)
+		boxX := calcBoxX(maxX, stages, stageIdx, titler.maxLen, titler.horizW)
 
 		key := "jobs-" + j.Name
 		boxKeys[key] = true
@@ -1339,6 +1370,16 @@ func jobsView(
 		}
 	}
 	root.SendToFront("jobs-" + appSt.curJob.Name)
+}
+
+func calcBoxX(maxX, stages, stageIdx, titlerMaxLen, spaceH int) int {
+	center := maxX / 2
+	boxW := titlerMaxLen + 4 + spaceH
+	allBoxesW := stages*(titlerMaxLen+2) + spaceH*(stages-1)
+	px := allBoxesW / 2
+	x := center - px + (stageIdx * boxW)
+
+	return x
 }
 
 func box(boxes map[string]*tview.TextView, root *tview.Pages, key string, x, y, w, h int) *tview.TextView {
