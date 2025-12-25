@@ -73,6 +73,17 @@ func (t titler) getJobTitle(jobName string) string {
 	return t.re.ReplaceAllString(jobName, t.replace)
 }
 
+func (t *titler) decWidth() {
+	t.maxLen--
+	if t.maxLen < 10 {
+		t.maxLen = 10
+	}
+}
+
+func (t *titler) incWidth() {
+	t.maxLen++
+}
+
 type ViewJobKind int64
 
 const (
@@ -182,6 +193,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		- %[1]sCtrl+Backspace%[1]s to deselect all jobs.
 		- %[1]ss%[1]s to run (start) selected jobs.
 		- %[1]sCtrl+Space%[1]s to suspend application and view the logs. Similar to %[1]sglab pipeline ci trace%[1]s.
+		- %[1]s]%[1]s,%[1]s[%[1]s to increase/decrease job titles dynamically.
 		- Supports %[1]svi%[1]s style bindings and arrow keys for navigating jobs and logs.
 	`, "`"),
 		Annotations: map[string]string{
@@ -533,8 +545,8 @@ func inputCapture(
 			appSt.curJob = navi.Navigate(appSt.jobs, event)
 			root.SendToFront("jobs-" + appSt.curJob.Name)
 		}
-		switch {
-		case event.Rune() == 's':
+		switch event.Rune() {
+		case 's':
 			if appSt.modalVisible || appSt.curJob == nil || appSt.curJob.Kind != Job {
 				break
 			}
@@ -584,6 +596,22 @@ func inputCapture(
 					app.ForceDraw()
 				})
 			root.AddAndSwitchToPage("yesno", modal, false)
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case '[':
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			opts.titler.decWidth()
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case ']':
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			opts.titler.incWidth()
 			inputCh <- struct{}{}
 			app.ForceDraw()
 			return nil
@@ -1129,7 +1157,7 @@ func jobsView(
 		}
 		return
 	}
-	px, _, maxX, maxY := root.GetInnerRect()
+	_, _, maxX, maxY := root.GetInnerRect()
 	var (
 		stages    = 0
 		lastStage = ""
@@ -1148,7 +1176,7 @@ func jobsView(
 	)
 	boxKeys := make(map[string]bool)
 	for _, j := range appSt.jobs {
-		boxX := px + (maxX / stages * stageIdx)
+		boxX := calcBoxX(maxX, stages, stageIdx, titler.maxLen)
 		if j.Stage != lastStage {
 			stageIdx++
 			lastStage = j.Stage
@@ -1174,7 +1202,7 @@ func jobsView(
 			lastStage = j.Stage
 			stageIdx++
 		}
-		boxX := px + (maxX / stages * stageIdx)
+		boxX := calcBoxX(maxX, stages, stageIdx, titler.maxLen)
 
 		key := "jobs-" + j.Name
 		boxKeys[key] = true
@@ -1252,6 +1280,10 @@ func jobsView(
 		}
 	}
 	root.SendToFront("jobs-" + appSt.curJob.Name)
+}
+
+func calcBoxX(maxX, stages, stageIdx, titlerMaxLen int) int {
+	return maxX/(stages+1)*(stageIdx+1) - (titlerMaxLen / 2)
 }
 
 func box(boxes map[string]*tview.TextView, root *tview.Pages, key string, x, y, w, h int) *tview.TextView {
