@@ -165,14 +165,15 @@ func TestMRView(t *testing.T) {
 	}
 
 	t.Run("show", func(t *testing.T) {
-		client, _ := gitlab.NewClient("")
+		tc := gitlabtesting.NewTestClient(t)
+		tc.MockMergeRequestApprovals.EXPECT().GetApprovalState("cli-automated-testing/test", int64(13)).Return(nil, nil, nil)
 		exec := cmdtest.SetupCmdForTest(t, func(f cmdutils.Factory) *cobra.Command {
 			cmd := NewCmdView(f)
 			cmdutils.EnableRepoOverride(cmd, f)
 			return cmd
 		}, true,
 			cmdtest.WithConfig(testConfig),
-			cmdtest.WithGitLabClient(client),
+			cmdtest.WithGitLabClient(tc.Client),
 		)
 
 		result, err := exec("13 -c -s -R cli-automated-testing/test")
@@ -191,14 +192,14 @@ func TestMRView(t *testing.T) {
 	})
 
 	t.Run("no_tty", func(t *testing.T) {
-		client, _ := gitlab.NewClient("")
+		tc := gitlabtesting.NewTestClient(t)
 		exec := cmdtest.SetupCmdForTest(t, func(f cmdutils.Factory) *cobra.Command {
 			cmd := NewCmdView(f)
 			cmdutils.EnableRepoOverride(cmd, f)
 			return cmd
 		}, false, // non-TTY
 			cmdtest.WithConfig(testConfig),
-			cmdtest.WithGitLabClient(client),
+			cmdtest.WithGitLabClient(tc.Client),
 		)
 
 		result, err := exec("13 -c -s -R cli-automated-testing/test")
@@ -541,10 +542,10 @@ func Test_reviewersList(t *testing.T) {
 }
 
 func TestMrViewJSON(t *testing.T) {
-	client, _ := gitlab.NewClient("")
+	tc := gitlabtesting.NewTestClient(t)
 	exec := cmdtest.SetupCmdForTest(t, NewCmdView, false,
 		cmdtest.WithConfig(testConfig),
-		cmdtest.WithGitLabClient(client),
+		cmdtest.WithGitLabClient(tc.Client),
 	)
 
 	output, err := exec("1 -F json")
