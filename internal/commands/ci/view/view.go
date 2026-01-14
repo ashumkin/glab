@@ -354,15 +354,9 @@ func inputCapture(
 			case modalVisible:
 				modalVisible = !modalVisible
 				root.HidePage("yesno")
-				if inputCh == nil {
-					inputCh <- struct{}{}
-				}
 			case logsVisible:
 				logsVisible = !logsVisible
 				root.HidePage("logs-" + curJob.Name)
-				if inputCh == nil {
-					inputCh <- struct{}{}
-				}
 				app.ForceDraw()
 			case len(pipelines) > 0:
 				pipelines = pipelines[:len(pipelines)-1]
@@ -377,9 +371,6 @@ func inputCapture(
 		if !modalVisible && !logsVisible && len(jobs) > 0 {
 			curJob = navi.Navigate(jobs, event)
 			root.SendToFront("jobs-" + curJob.Name)
-			if inputCh == nil {
-				inputCh <- struct{}{}
-			}
 		}
 		switch event.Key() {
 		case tcell.KeyCtrlQ:
@@ -502,13 +493,7 @@ func inputCapture(
 					}
 				}
 			})
-			if inputCh == nil {
-				inputCh <- struct{}{}
-			}
 			return nil
-		}
-		if inputCh == nil {
-			inputCh <- struct{}{}
 		}
 		return event
 	}
