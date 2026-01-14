@@ -334,15 +334,9 @@ func inputCapture(
 			case modalVisible:
 				modalVisible = !modalVisible
 				root.HidePage("yesno")
-				if inputCh == nil {
-					inputCh <- struct{}{}
-				}
 			case logsVisible:
 				logsVisible = !logsVisible
 				root.HidePage(logsPageKey(curJob))
-				if inputCh == nil {
-					inputCh <- struct{}{}
-				}
 				app.ForceDraw()
 			// Only a descent stacks a second pipeline; at the bottom, quit.
 			case len(pipelines) > 1:
@@ -360,9 +354,6 @@ func inputCapture(
 		if !modalVisible && !logsVisible && len(jobs) > 0 {
 			curJob = navi.Navigate(jobs, event)
 			root.SendToFront("jobs-" + curJob.Name)
-			if inputCh == nil {
-				inputCh <- struct{}{}
-			}
 		}
 		event = normalizeCtrlM(event)
 		switch event.Key() {
@@ -495,13 +486,7 @@ func inputCapture(
 					}
 				}
 			})
-			if inputCh == nil {
-				inputCh <- struct{}{}
-			}
 			return nil
-		}
-		if inputCh == nil {
-			inputCh <- struct{}{}
 		}
 		return event
 	}
