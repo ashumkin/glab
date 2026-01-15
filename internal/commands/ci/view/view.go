@@ -30,7 +30,6 @@ import (
 	"gitlab.com/gitlab-org/cli/internal/commands/ci/ciutils"
 	"gitlab.com/gitlab-org/cli/internal/commands/mr/mrutils"
 	"gitlab.com/gitlab-org/cli/internal/config"
-	"gitlab.com/gitlab-org/cli/internal/git"
 	"gitlab.com/gitlab-org/cli/internal/glrepo"
 	"gitlab.com/gitlab-org/cli/internal/iostreams"
 	"gitlab.com/gitlab-org/cli/internal/mcpannotations"
@@ -194,7 +193,7 @@ func (o *options) complete(args []string) error {
 		if len(args) == 1 {
 			o.refName = args[0]
 		} else {
-			refName, err := git.CurrentBranch()
+			refName, err := o.factory.Branch()
 			if err != nil {
 				return err
 			}
