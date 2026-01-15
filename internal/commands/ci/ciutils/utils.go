@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"gitlab.com/gitlab-org/cli/internal/git"
 	"gitlab.com/gitlab-org/cli/internal/glrepo"
 	"gitlab.com/gitlab-org/cli/internal/iostreams"
 	"gitlab.com/gitlab-org/cli/internal/prompt"
@@ -206,7 +207,9 @@ func getPipelineId(inputs *JobInputs, opts *JobOptions) (int, error) {
 		return inputs.PipelineId, nil
 	}
 
-	branch := GetBranch(inputs.Branch, nil, opts.Repo, opts.Client)
+	branch := GetBranch(inputs.Branch, func() (string, error) {
+		return git.CurrentBranch()
+	}, opts.Repo, opts.Client)
 	if branch == "" {
 		return 0, fmt.Errorf("unable to determine branch")
 	}
