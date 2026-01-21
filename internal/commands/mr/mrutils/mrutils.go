@@ -141,6 +141,11 @@ func DisplayAllMRs(streams *iostreams.IOStreams, mrs []*gitlab.BasicMergeRequest
 			} else {
 				aprState = streams.Color().FailedIcon()
 			}
+			if m.BlockingDiscussionsResolved {
+				aprState += streams.Color().GreenCheck()
+			} else  {
+				aprState += streams.Color().WarnIcon()
+			}
 		} else {
 			aprState = streams.Color().Yellow("?")
 		}
