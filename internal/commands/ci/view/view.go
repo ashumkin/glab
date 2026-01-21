@@ -21,7 +21,6 @@ import (
 	"github.com/lunixbochs/vtclean"
 	"github.com/rivo/tview"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
@@ -36,20 +35,22 @@ import (
 	"gitlab.com/gitlab-org/cli/internal/iostreams"
 	"gitlab.com/gitlab-org/cli/internal/mcpannotations"
 	"gitlab.com/gitlab-org/cli/internal/utils"
+	"golang.org/x/sync/errgroup"
 )
 
 type options struct {
-	io            *iostreams.IOStreams
-	factory       cmdutils.Factory
-	gitlabClient  func() (*gitlab.Client, error)
-	baseRepo      func() (glrepo.Interface, error)
-	config        func() config.Config
-	refName       string
-	openInBrowser bool
-	pipelineID    int64
-	forMR         bool
-	interactive   bool
-	tagsOnly      bool
+	io             *iostreams.IOStreams
+	factory        cmdutils.Factory
+	gitlabClient   func() (*gitlab.Client, error)
+	baseRepo       func() (glrepo.Interface, error)
+	config         func() config.Config
+	refName        string
+	openInBrowser  bool
+	pipelineID     int64
+	forMR          bool
+	interactive    bool
+	tagsOnly       bool
+	filterByBranch bool
 }
 
 type titler struct {
@@ -213,7 +214,9 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	pipelineCIView.Flags().Int64VarP(&opts.pipelineID, "pipelineid", "p", 0, "Check pipeline status for a specific pipeline ID.")
 	pipelineCIView.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Interactively choose pipeline to view from a list")
 	pipelineCIView.Flags().BoolVarP(&opts.tagsOnly, "tags-only", "t", false, "Get pipelines for tags only (implies --interactive)")
+	pipelineCIView.Flags().BoolVarP(&opts.filterByBranch, "filter-by-branch", "f", false, "Get pipelines filtered by the specified branch (implies --interactive)")
 	pipelineCIView.MarkFlagsMutuallyExclusive("branch", "pipelineid")
+	pipelineCIView.MarkFlagsMutuallyExclusive("tags-only", "filter-by-branch")
 
 	return pipelineCIView
 }
@@ -237,6 +240,9 @@ func (o *options) complete(args []string) error {
 			o.refName = refName
 		}
 	}
+	if o.filterByBranch {
+		o.interactive = true
+	}
 
 	return nil
 }
@@ -259,9 +265,14 @@ func (o *options) run(ctx context.Context, args []string) error {
 
 	projectID := repo.FullName()
 
+	pipelineFilterOpts := filterOpts{tagsOnly: o.tagsOnly}
+	if o.filterByBranch {
+		pipelineFilterOpts.branch = o.refName
+	}
+
 	var pipeline *gitlab.Pipeline
 	if o.interactive {
-		pipeline, err = choosePipeline(o.io, client, projectID, repo, o.tagsOnly)
+		pipeline, err = choosePipeline(o.io, client, projectID, repo, pipelineFilterOpts)
 		if err != nil {
 			return err
 		}
@@ -335,23 +346,39 @@ func (o *options) run(ctx context.Context, args []string) error {
 		if !o.interactive {
 			return nil
 		}
-		pipeline, err = choosePipeline(o.io, client, projectID, repo, o.tagsOnly)
+		pipeline, err = choosePipeline(o.io, client, projectID, repo, pipelineFilterOpts)
 		if err != nil {
 			return err
 		}
 	}
 }
 
-func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectID string, repo glrepo.Interface, tagsOnly bool) (*gitlab.Pipeline, error) {
+type filterOpts struct {
+	branch   string
+	tagsOnly bool
+}
+
+func (o filterOpts) apply(lppOpts gitlab.ListProjectPipelinesOptions) gitlab.ListProjectPipelinesOptions {
+	if o.branch != "" {
+		lppOpts.Ref = gitlab.Ptr(o.branch)
+		return lppOpts
+	}
+	if o.tagsOnly {
+		lppOpts.Scope = gitlab.Ptr("tags")
+	}
+
+	return lppOpts
+}
+
+func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectID string, repo glrepo.Interface, filterOptions filterOpts) (*gitlab.Pipeline, error) {
 	pipelinesOptions := gitlab.ListProjectPipelinesOptions{
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
 			PerPage: 30,
 		},
 	}
-	if tagsOnly {
-		pipelinesOptions.Scope = gitlab.Ptr("tags")
-	}
+
+	pipelinesOptions = filterOptions.apply(pipelinesOptions)
 
 	pipes, _, err := apiClient.Pipelines.ListProjectPipelines(repo.FullName(), &pipelinesOptions)
 	if len(pipes) == 0 {
