@@ -460,6 +460,7 @@ func Test_jobsView(t *testing.T) {
 		titleFind, titleReplace string
 		titleMaxLen             int
 		boxHSpace               int
+		boxVSpace               int
 		expected                []string
 	}{
 		{
@@ -474,7 +475,7 @@ func Test_jobsView(t *testing.T) {
 				},
 			},
 			titleMaxLen: defaultTitleMaxLen,
-			boxHSpace:   defaultBoxHSpace,
+			boxHSpace:   defaultBoxesHorizSpace,
 			expected: []string{
 				"                             ┌────────────────────┐                                 ",
 				"                             │       Stage1       │                                 ",
@@ -547,7 +548,7 @@ func Test_jobsView(t *testing.T) {
 				},
 			},
 			titleMaxLen: defaultTitleMaxLen,
-			boxHSpace:   2 * defaultBoxHSpace,
+			boxHSpace:   2 * defaultBoxesHorizSpace,
 			expected: []string{
 				"              ┌────────────────────┐          ┌────────────────────┐                ",
 				"              │       Stage1       │          │       Stage2       │                ",
@@ -557,21 +558,21 @@ func Test_jobsView(t *testing.T) {
 				"              ║                    ║          │                    │                ",
 				"              ║             01m 01s║──┬────┬──│                    │                ",
 				"              ╚════════════════════╝  │    │  └────────────────────┘                ",
-				"                                      │    │                                        ",
 				"              ┌───✔ stage1-job2────┐  │    │  ┌───● stage2-job2────┐                ",
 				"              │                    │  │    │  │                    │                ",
 				"              │                    │──┤    ├──│                    │                ",
 				"              └────────────────────┘  │    │  └────────────────────┘                ",
-				"                                      │    │                                        ",
 				"              ┌───✔ stage1-job3────┐  │    │  ┌───● stage2-job3────┐                ",
 				"              │                    │  │    │  │                   »│                ",
 				"              │                    │──┤    ╰──│                    │                ",
 				"              └────────────────────┘  │       └────────────────────┘                ",
-				"                                      │                                             ",
 				"              ┌───✘ stage1-job4────┐  │                                             ",
 				"              │                    │  │                                             ",
 				"              │                    │──╯                                             ",
 				"              └────────────────────┘                                                ",
+				"                                                                                    ",
+				"                                                                                    ",
+				"                                                                                    ",
 				"                                                                                    ",
 				"                                                                                    ",
 				"                                                                                    ",
@@ -630,7 +631,8 @@ func Test_jobsView(t *testing.T) {
 				},
 			},
 			titleMaxLen: defaultTitleMaxLen,
-			boxHSpace:   defaultBoxHSpace,
+			boxHSpace:   defaultBoxesHorizSpace,
+			boxVSpace:   defaultBoxesVertSpace + 1,
 			expected: []string{
 				"   ┌────────────────────┐      ┌────────────────────┐      ┌────────────────────┐   ",
 				"   │       Stage1       │      │       Stage2       │      │       Stage3       │   ",
@@ -720,6 +722,7 @@ func Test_jobsView(t *testing.T) {
 			},
 			titleMaxLen: 17,
 			boxHSpace:   0,
+			boxVSpace:   defaultBoxesVertSpace + 1,
 			expected: []string{
 				"  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐",
 				"  │     Stage1      │  │     Stage2      │  │     Stage3      │  │     Stage4      │",
@@ -805,6 +808,7 @@ func Test_jobsView(t *testing.T) {
 			titleReplace: "$2",
 			titleMaxLen:  defaultTitleMaxLen + 4,
 			boxHSpace:    2,
+			boxVSpace:    defaultBoxesVertSpace + 1,
 			expected: []string{
 				"       ┌────────────────────────┐    ┌────────────────────────┐    ┌────────────────────────┐       ",
 				"       │         Stage1         │    │         Stage2         │    │         Stage3         │       ",
@@ -860,7 +864,8 @@ func Test_jobsView(t *testing.T) {
 			}()
 			root.Box.Focus(nil)
 			appSt := &appState{jobs: tt.jobs, boxes: boxes}
-			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", "", newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen, tt.boxHSpace), appSt, nil)
+			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", "",
+				newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen, tt.boxHSpace, tt.boxVSpace), appSt, nil)
 			root.Focus(func(p tview.Primitive) { p.Focus(nil) })
 			root.Draw(screen)
 			linkJobsView(nil, appSt)(screen)
@@ -1682,7 +1687,7 @@ func Test_inputCapture_ctrlSShowsFullJobName(t *testing.T) {
 		return inputCapture(
 			t.Context(), tview.NewApplication(), root, &navigator{},
 			make(chan struct{}, 1), make(chan bool, 1),
-			&[]gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}, appSt, newTitler("", "", maxTitle, defaultBoxHSpace),
+			&[]gitlab.PipelineInfo{{ID: 10, ProjectID: 7}}, appSt, newTitler("", "", maxTitle, defaultBoxesHorizSpace, defaultBoxesVertSpace),
 			&options{io: ios}, tc.Client,
 		)
 	}
@@ -1901,7 +1906,7 @@ func Test_inputCapture_viKeys(t *testing.T) {
 	handler := inputCapture(
 		t.Context(), tview.NewApplication(), tview.NewPages(), &navigator{},
 		make(chan struct{}, 1), make(chan bool, 1),
-		&pipelines, appSt, newTitler("", "", maxTitle, defaultBoxHSpace),
+		&pipelines, appSt, newTitler("", "", maxTitle, defaultBoxesHorizSpace, defaultBoxesVertSpace),
 		&options{io: ios}, tc.Client,
 	)
 
@@ -2166,7 +2171,7 @@ func Test_jobsView_bracketedJobNames(t *testing.T) {
 		root.SetRect(0, 0, 90, 30)
 		jobsCh := make(chan []*ViewJob, 1)
 		jobsCh <- viewJobs
-		jobsView(t.Context(), nil, jobsCh, make(chan struct{}), root, nil, "", "", newTitler("", "", maxTitle, defaultBoxHSpace), appSt, nil)
+		jobsView(t.Context(), nil, jobsCh, make(chan struct{}), root, nil, "", "", newTitler("", "", maxTitle, defaultBoxesHorizSpace, defaultBoxesVertSpace), appSt, nil)
 
 		titles := make(map[string]string, len(viewJobs))
 		for _, j := range viewJobs {
