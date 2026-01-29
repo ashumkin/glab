@@ -34,6 +34,7 @@ Use arrow keys to navigate jobs and logs.
 - `Ctrl+Backspace` to deselect all jobs.
 - `s` to run (start) selected jobs.
 - `]`,`[` to increase/decrease job titles dynamically.
+- `.`,`,` to increase/decrease job vertical space dynamically.
 - Supports `vi` style bindings and arrow keys for navigating jobs and logs.
 
 ```plaintext

@@ -54,20 +54,30 @@ type options struct {
 }
 
 type titler struct {
-	re      *regexp.Regexp
-	replace string
-	maxLen  int
-	horizW  int
+	re              *regexp.Regexp
+	replace         string
+	maxLen          int
+	boxesHorizSpace int
+	boxesVertSpace  int
 }
 
-func newTitler(find, replace string, maxLen, space int) *titler {
+func newTitler(find, replace string, maxLen, boxesHorizSpace, boxesVertSpace int) *titler {
 	if find == "" {
 		find = ".+"
 	}
 	if replace == "" {
 		replace = "$0"
 	}
-	return &titler{re: regexp.MustCompile(find), replace: replace, maxLen: maxLen, horizW: space}
+	if boxesVertSpace == 0 {
+		boxesVertSpace = defaultBoxesVertSpace
+	}
+	return &titler{
+		re:              regexp.MustCompile(find),
+		replace:         replace,
+		maxLen:          maxLen,
+		boxesHorizSpace: boxesHorizSpace,
+		boxesVertSpace:  boxesVertSpace,
+	}
 }
 
 func (t titler) getJobTitle(jobName string) string {
@@ -83,6 +93,14 @@ func (t *titler) decWidth() {
 
 func (t *titler) incWidth() {
 	t.maxLen++
+}
+
+func (t *titler) decBoxesVertSpace() {
+	t.boxesVertSpace--
+}
+
+func (t *titler) incBoxesVertSpace() {
+	t.boxesVertSpace++
 }
 
 type ViewJobKind int64
@@ -145,8 +163,11 @@ func ViewJobFromJob(job *gitlab.Job) *ViewJob {
 	return vj
 }
 
-const defaultTitleMaxLen = 20
-const defaultBoxHSpace = 4
+const (
+	defaultTitleMaxLen     = 20
+	defaultBoxesHorizSpace = 4
+	defaultBoxesVertSpace  = 4
+)
 
 func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	opts := options{
@@ -179,6 +200,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		- %[1]sCtrl+Backspace%[1]s to deselect all jobs.
 		- %[1]ss%[1]s to run (start) selected jobs.
 		- %[1]s]%[1]s,%[1]s[%[1]s to increase/decrease job titles dynamically.
+		- %[1]s.%[1]s,%[1]s,%[1]s to increase/decrease job vertical space dynamically.
 		- Supports %[1]svi%[1]s style bindings and arrow keys for navigating jobs and logs.
 	`, "`"),
 		Annotations: map[string]string{
@@ -464,7 +486,7 @@ func drawView(
 	if err != nil {
 		titleMaxLen = defaultTitleMaxLen
 	}
-	titlr := newTitler(ff, r, titleMaxLen, defaultBoxHSpace)
+	titlr := newTitler(ff, r, titleMaxLen, defaultBoxesHorizSpace, defaultBoxesVertSpace)
 	appSt := newAppState()
 	app.SetInputCapture(inputCapture(ctx, app, root, &navi, inputCh, forceUpdateCh, pipelines, appSt, titlr, o, client))
 	go updateJobs(app, pipelines, jobsCh, forceUpdateCh, appSt, client)
@@ -653,6 +675,22 @@ func inputCapture(
 				break
 			}
 			titler.incWidth()
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case ',':
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			titler.decBoxesVertSpace()
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case '.':
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			titler.incBoxesVertSpace()
 			inputCh <- struct{}{}
 			app.ForceDraw()
 			return nil
@@ -1292,7 +1330,7 @@ func jobsView(
 	)
 	boxKeys := make(map[string]bool)
 	for _, j := range appSt.jobs {
-		boxX := calcBoxX(maxX, stages, stageIdx, titler.maxLen, titler.horizW)
+		boxX := calcBoxX(maxX, stages, stageIdx, titler.maxLen, titler.boxesHorizSpace)
 		if j.Stage != lastStage {
 			stageIdx++
 			lastStage = j.Stage
@@ -1318,11 +1356,11 @@ func jobsView(
 			lastStage = j.Stage
 			stageIdx++
 		}
-		boxX := calcBoxX(maxX, stages, stageIdx, titler.maxLen, titler.horizW)
+		boxX := calcBoxX(maxX, stages, stageIdx, titler.maxLen, titler.boxesHorizSpace)
 
 		key := "jobs-" + j.Name
 		boxKeys[key] = true
-		x, y, w, h := boxX, maxY/6+(rowIdx*5), titler.maxLen+2, 4
+		x, y, w, h := boxX, maxY/6+(rowIdx*titler.boxesVertSpace), titler.maxLen+2, 4
 		b := box(appSt.boxes, root, key, x, y, w, h)
 		// The scope of jobs to show, one or array of: created, pending, running,
 		// failed, success, canceled, skipped; showing all jobs if none provided
