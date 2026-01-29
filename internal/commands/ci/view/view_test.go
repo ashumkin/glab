@@ -439,6 +439,7 @@ func Test_jobsView(t *testing.T) {
 		titleFind, titleReplace string
 		titleMaxLen             int
 		boxHSpace               int
+		boxVSpace               int
 		expected                []string
 	}{
 		{
@@ -453,7 +454,7 @@ func Test_jobsView(t *testing.T) {
 				},
 			},
 			titleMaxLen: defaultTitleMaxLen,
-			boxHSpace:   defaultBoxHSpace,
+			boxHSpace:   defaultBoxesHorizSpace,
 			expected: []string{
 				"                             ┌────────────────────┐                                 ",
 				"                             │       Stage1       │                                 ",
@@ -526,7 +527,7 @@ func Test_jobsView(t *testing.T) {
 				},
 			},
 			titleMaxLen: defaultTitleMaxLen,
-			boxHSpace:   2 * defaultBoxHSpace,
+			boxHSpace:   2 * defaultBoxesHorizSpace,
 			expected: []string{
 				"              ┌────────────────────┐          ┌────────────────────┐                ",
 				"              │       Stage1       │          │       Stage2       │                ",
@@ -536,21 +537,21 @@ func Test_jobsView(t *testing.T) {
 				"              ║                    ║          │                    │                ",
 				"              ║             01m 01s║──┬────┬──│                    │                ",
 				"              ╚════════════════════╝  │    │  └────────────────────┘                ",
-				"                                      │    │                                        ",
 				"              ┌───✔ stage1-job2────┐  │    │  ┌───● stage2-job2────┐                ",
 				"              │                    │  │    │  │                    │                ",
 				"              │                    │──┤    ├──│                    │                ",
 				"              └────────────────────┘  │    │  └────────────────────┘                ",
-				"                                      │    │                                        ",
 				"              ┌───✔ stage1-job3────┐  │    │  ┌───● stage2-job3────┐                ",
 				"              │                    │  │    │  │                   »│                ",
 				"              │                    │──┤    ╰──│                    │                ",
 				"              └────────────────────┘  │       └────────────────────┘                ",
-				"                                      │                                             ",
 				"              ┌───✘ stage1-job4────┐  │                                             ",
 				"              │                    │  │                                             ",
 				"              │                    │──╯                                             ",
 				"              └────────────────────┘                                                ",
+				"                                                                                    ",
+				"                                                                                    ",
+				"                                                                                    ",
 				"                                                                                    ",
 				"                                                                                    ",
 				"                                                                                    ",
@@ -609,7 +610,8 @@ func Test_jobsView(t *testing.T) {
 				},
 			},
 			titleMaxLen: defaultTitleMaxLen,
-			boxHSpace:   defaultBoxHSpace,
+			boxHSpace:   defaultBoxesHorizSpace,
+			boxVSpace:   defaultBoxesVertSpace + 1,
 			expected: []string{
 				"   ┌────────────────────┐      ┌────────────────────┐      ┌────────────────────┐   ",
 				"   │       Stage1       │      │       Stage2       │      │       Stage3       │   ",
@@ -699,6 +701,7 @@ func Test_jobsView(t *testing.T) {
 			},
 			titleMaxLen: 17,
 			boxHSpace:   0,
+			boxVSpace:   defaultBoxesVertSpace + 1,
 			expected: []string{
 				"  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐",
 				"  │     Stage1      │  │     Stage2      │  │     Stage3      │  │     Stage4      │",
@@ -784,6 +787,7 @@ func Test_jobsView(t *testing.T) {
 			titleReplace: "$2",
 			titleMaxLen:  defaultTitleMaxLen + 4,
 			boxHSpace:    2,
+			boxVSpace:    defaultBoxesVertSpace + 1,
 			expected: []string{
 				"       ┌────────────────────────┐    ┌────────────────────────┐    ┌────────────────────────┐       ",
 				"       │         Stage1         │    │         Stage2         │    │         Stage3         │       ",
@@ -839,7 +843,8 @@ func Test_jobsView(t *testing.T) {
 			}()
 			root.Box.Focus(nil)
 			appSt := &appState{jobs: tt.jobs, boxes: boxes}
-			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", 0, newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen, tt.boxHSpace), appSt)
+			jobsView(t.Context(), nil, jobsCh, inputCh, root, nil, "", 0,
+				newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen, tt.boxHSpace, tt.boxVSpace), appSt)
 			root.Focus(func(p tview.Primitive) { p.Focus(nil) })
 			root.Draw(screen)
 			linkJobsView(nil, appSt)(screen)
