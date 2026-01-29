@@ -55,19 +55,20 @@ type options struct {
 }
 
 type titler struct {
-	re      *regexp.Regexp
-	replace string
-	maxLen  int
+	re             *regexp.Regexp
+	replace        string
+	maxLen         int
+	boxesVertSpace int
 }
 
-func newTitler(find, replace string, maxLen int) *titler {
+func newTitler(find, replace string, maxLen, boxesVertSpace int) *titler {
 	if find == "" {
 		find = ".+"
 	}
 	if replace == "" {
 		replace = "$0"
 	}
-	return &titler{re: regexp.MustCompile(find), replace: replace, maxLen: maxLen}
+	return &titler{re: regexp.MustCompile(find), replace: replace, maxLen: maxLen, boxesVertSpace: boxesVertSpace}
 }
 
 func (t titler) getJobTitle(jobName string) string {
@@ -83,6 +84,14 @@ func (t *titler) decWidth() {
 
 func (t *titler) incWidth() {
 	t.maxLen++
+}
+
+func (t *titler) decBoxesVertSpace() {
+	t.boxesVertSpace--
+}
+
+func (t *titler) incBoxesVertSpace() {
+	t.boxesVertSpace++
 }
 
 type ViewJobKind int64
@@ -153,7 +162,10 @@ func ViewJobFromJob(job *gitlab.Job) *ViewJob {
 	return vj
 }
 
-const defaultTitleMaxLen = 20
+const (
+	defaultTitleMaxLen    = 20
+	defaultBoxesVertSpace = 5
+)
 
 func NewCmdView(f cmdutils.Factory) *cobra.Command {
 	cfg := f.Config()
@@ -170,7 +182,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		gitlabClient: f.GitLabClient,
 		baseRepo:     f.BaseRepo,
 		config:       f.Config,
-		titler:       newTitler(ff, r, titleMaxLen),
+		titler:       newTitler(ff, r, titleMaxLen, defaultBoxesVertSpace),
 	}
 	pipelineCIView := &cobra.Command{
 		Use:   "view [branch/tag]",
@@ -195,6 +207,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		- %[1]ss%[1]s to run (start) selected jobs.
 		- %[1]sCtrl+Space%[1]s to suspend application and view the logs. Similar to %[1]sglab pipeline ci trace%[1]s.
 		- %[1]s]%[1]s,%[1]s[%[1]s to increase/decrease job titles dynamically.
+		- %[1]s.%[1]s,%[1]s,%[1]s to increase/decrease job vertical space dynamically.
 		- Supports %[1]svi%[1]s style bindings and arrow keys for navigating jobs and logs.
 	`, "`"),
 		Annotations: map[string]string{
@@ -636,6 +649,22 @@ func inputCapture(
 				break
 			}
 			opts.titler.incWidth()
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case ',':
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			opts.titler.decBoxesVertSpace()
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
+		case '.':
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			opts.titler.incBoxesVertSpace()
 			inputCh <- struct{}{}
 			app.ForceDraw()
 			return nil
@@ -1230,7 +1259,7 @@ func jobsView(
 
 		key := "jobs-" + j.Name
 		boxKeys[key] = true
-		x, y, w, h := boxX, maxY/6+(rowIdx*5), titler.maxLen+2, 4
+		x, y, w, h := boxX, maxY/6+(rowIdx*titler.boxesVertSpace), titler.maxLen+2, 4
 		b := box(appSt.boxes, root, key, x, y, w, h)
 		// The scope of jobs to show, one or array of: created, pending, running,
 		// failed, success, canceled, skipped; showing all jobs if none provided

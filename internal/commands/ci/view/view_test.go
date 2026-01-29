@@ -633,7 +633,7 @@ func Test_jobsView(t *testing.T) {
 			}()
 			root.Box.Focus(nil)
 			appSt := &appState{jobs: tt.jobs, boxes: boxes}
-			jobsView(nil, jobsCh, inputCh, root, nil, "", 0, newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen), appSt)
+			jobsView(nil, jobsCh, inputCh, root, nil, "", 0, newTitler(tt.titleFind, tt.titleReplace, tt.titleMaxLen, defaultBoxesVertSpace), appSt)
 			root.Focus(func(p tview.Primitive) { p.Focus(nil) })
 			root.Draw(screen)
 			linkJobsView(nil, appSt)(screen)
