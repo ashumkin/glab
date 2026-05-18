@@ -211,6 +211,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		  quits the CI/CD view.
 		- %[1]sCtrl+L%[1]s to redraw the screen.
 		- %[1]sCtrl+Q%[1]s to quit the CI/CD view.
+		- %[1]sCtrl+W%[1]s to open current job log in a browser.
 		- %[1]sSpace%[1]s to select job.
 		- %[1]sCtrl+E%[1]s to select manual jobs in the stage of current selected job
 		- %[1]sCtrl+A%[1]s to select manual jobs in the stage of current selected job and after
@@ -732,6 +733,21 @@ func inputCapture(
 		switch event.Key() {
 		case tcell.KeyCtrlQ:
 			app.Stop()
+			return nil
+		case tcell.KeyCtrlW:
+			cfg := opts.config()
+			repo, err := opts.baseRepo()
+			if err != nil {
+				return nil
+			}
+
+			browser, _ := cfg.Get(repo.RepoHost(), "browser")
+			if appSt.curJob.OriginalJob != nil {
+				_ = utils.OpenInBrowser(appSt.curJob.OriginalJob.WebURL, browser)
+
+				return nil
+			}
+
 			return nil
 		case tcell.KeyCtrlD:
 			if appSt.curJob.Kind == Job && (appSt.curJob.Status == "created" || appSt.curJob.Status == "pending" || appSt.curJob.Status == "running") {
