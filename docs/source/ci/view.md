@@ -28,6 +28,7 @@ Use arrow keys to navigate jobs and logs.
 - `Ctrl+L` to redraw the screen.
 - `Ctrl+Q` to quit the CI/CD view.
 - `Ctrl+Space` to suspend application and view the logs. Similar to `glab ci trace`.
+- `Ctrl+W` to open current job log in a browser.
 - `Space` to select job.
 - `Ctrl+E` to select manual jobs in the stage of current selected job
 - `Ctrl+A` to select manual jobs in the stage of current selected job and after
