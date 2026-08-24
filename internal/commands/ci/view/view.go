@@ -288,9 +288,12 @@ func (o *options) run(ctx context.Context, args []string) error {
 
 	projectID := repo.FullName()
 
-	pipelineFilterOpts := filterOpts{tagsOnly: o.tagsOnly}
+	pipelineFilterOpts := newFilterOpts(o.tagsOnly)
 	if o.filterByBranch {
-		pipelineFilterOpts.branch = o.refName
+		pipelineFilterOpts.SetBranch(o.refName)
+	}
+	if o.tagsOnly && len(args) > 0 {
+		pipelineFilterOpts.SetBranch(args[0])
 	}
 
 	var pipeline *gitlab.Pipeline
@@ -377,23 +380,40 @@ func (o *options) run(ctx context.Context, args []string) error {
 }
 
 type filterOpts struct {
+	re       *regexp.Regexp
 	branch   string
 	tagsOnly bool
 }
 
-func (o filterOpts) apply(lppOpts gitlab.ListProjectPipelinesOptions) gitlab.ListProjectPipelinesOptions {
-	if o.branch != "" {
-		lppOpts.Ref = gitlab.Ptr(o.branch)
-		return lppOpts
-	}
+func newFilterOpts(tagsOnly bool) *filterOpts {
+	return &filterOpts{tagsOnly: tagsOnly}
+}
+
+func (o *filterOpts) apply(lppOpts gitlab.ListProjectPipelinesOptions) gitlab.ListProjectPipelinesOptions {
 	if o.tagsOnly {
 		lppOpts.Scope = gitlab.Ptr("tags")
+		return lppOpts
+	}
+	if o.branch != "" {
+		lppOpts.Ref = gitlab.Ptr(o.branch)
 	}
 
 	return lppOpts
 }
 
-func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectID string, repo glrepo.Interface, filterOptions filterOpts) (*gitlab.Pipeline, error) {
+func (o filterOpts) nameMatches(ref string) bool {
+	if o.re == nil {
+		return true
+	}
+	return o.re.Match([]byte(ref))
+}
+
+func (o *filterOpts) SetBranch(name string) {
+	o.branch = name
+	o.re = regexp.MustCompile(o.branch)
+}
+
+func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectID string, repo glrepo.Interface, filterOptions *filterOpts) (*gitlab.Pipeline, error) {
 	pipelinesOptions := gitlab.ListProjectPipelinesOptions{
 		ListOptions: gitlab.ListOptions{
 			Page:    1,
@@ -410,6 +430,9 @@ func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectI
 	pipeMap := make(map[string]*gitlab.PipelineInfo)
 	var pipeList []string
 	for _, pipe := range pipes {
+		if !filterOptions.nameMatches(pipe.Ref) {
+			continue
+		}
 		var duration string
 		if pipe.CreatedAt != nil {
 			duration = "(" + utils.TimeToPrettyTimeAgo(*pipe.CreatedAt) + ")"
