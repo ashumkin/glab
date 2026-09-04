@@ -392,6 +392,9 @@ func newFilterOpts(tagsOnly bool) *filterOpts {
 func (o *filterOpts) apply(lppOpts gitlab.ListProjectPipelinesOptions) gitlab.ListProjectPipelinesOptions {
 	if o.tagsOnly {
 		lppOpts.Scope = gitlab.Ptr("tags")
+		if o.re != nil {
+			lppOpts.ListOptions.PerPage = 100
+		}
 		return lppOpts
 	}
 	if o.branch != "" {
@@ -409,38 +412,17 @@ func (o filterOpts) nameMatches(ref string) bool {
 }
 
 func (o *filterOpts) SetBranch(name string) {
+	if name == "" {
+		return
+	}
 	o.branch = name
 	o.re = regexp.MustCompile(o.branch)
 }
 
 func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectID string, repo glrepo.Interface, filterOptions *filterOpts) (*gitlab.Pipeline, error) {
-	pipelinesOptions := gitlab.ListProjectPipelinesOptions{
-		ListOptions: gitlab.ListOptions{
-			Page:    1,
-			PerPage: 30,
-		},
-	}
-
-	pipelinesOptions = filterOptions.apply(pipelinesOptions)
-
-	pipes, _, err := apiClient.Pipelines.ListProjectPipelines(repo.FullName(), &pipelinesOptions)
-	if len(pipes) == 0 {
-		return nil, fmt.Errorf("no pipelines found")
-	}
-	pipeMap := make(map[string]*gitlab.PipelineInfo)
-	var pipeList []string
-	for _, pipe := range pipes {
-		if !filterOptions.nameMatches(pipe.Ref) {
-			continue
-		}
-		var duration string
-		if pipe.CreatedAt != nil {
-			duration = "(" + utils.TimeToPrettyTimeAgo(*pipe.CreatedAt) + ")"
-		}
-
-		t := fmt.Sprintf("(%s) • #%d (%d) %s %s", pipe.Status, pipe.ID, pipe.IID, pipe.Ref, duration)
-		pipeList = append(pipeList, t)
-		pipeMap[t] = pipe
+	pipeMap, pipeList, err := fetchPipelines(apiClient, repo, filterOptions)
+	if err != nil {
+		return nil, err
 	}
 	chosenPipeline := pipeList[0]
 	if !ios.PromptEnabled() {
@@ -458,6 +440,45 @@ func choosePipeline(ios *iostreams.IOStreams, apiClient *gitlab.Client, projectI
 		return nil, fmt.Errorf("can't get pipeline #%d info: %w", pipeMap[chosenPipeline].ID, err)
 	}
 	return pipeline, nil
+}
+
+func fetchPipelines(apiClient *gitlab.Client, repo glrepo.Interface, filterOptions *filterOpts) (map[string]*gitlab.PipelineInfo, []string, error) {
+	const maxSize = 30
+	pipelinesOptions := gitlab.ListProjectPipelinesOptions{
+		ListOptions: gitlab.ListOptions{
+			Page:    1,
+			PerPage: maxSize,
+		},
+	}
+
+	pipelinesOptions = filterOptions.apply(pipelinesOptions)
+
+	pipes, _, err := apiClient.Pipelines.ListProjectPipelines(repo.FullName(), &pipelinesOptions)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(pipes) == 0 {
+		return nil, nil, fmt.Errorf("no pipelines found")
+	}
+	pipeMap := make(map[string]*gitlab.PipelineInfo)
+	var pipeList []string
+	for _, pipe := range pipes {
+		if !filterOptions.nameMatches(pipe.Ref) {
+			continue
+		}
+		var duration string
+		if pipe.CreatedAt != nil {
+			duration = "(" + utils.TimeToPrettyTimeAgo(*pipe.CreatedAt) + ")"
+		}
+
+		t := fmt.Sprintf("(%s) • #%d (%d) %s %s", pipe.Status, pipe.ID, pipe.IID, pipe.Ref, duration)
+		pipeList = append(pipeList, t)
+		pipeMap[t] = pipe
+		if len(pipeList) >= maxSize {
+			break
+		}
+	}
+	return pipeMap, pipeList, nil
 }
 
 func drawView(
