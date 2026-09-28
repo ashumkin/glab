@@ -6,7 +6,7 @@ import (
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 )
 
-func UserByName(client *gitlab.Client, name string) (*gitlab.User, error) {
+func UserByName(client *gitlab.Client, name string, requestOpts ...gitlab.RequestOptionFunc) (*gitlab.User, error) {
 	opts := &gitlab.ListUsersOptions{Username: new(name)}
 
 	if opts.PerPage == 0 {
@@ -15,11 +15,11 @@ func UserByName(client *gitlab.Client, name string) (*gitlab.User, error) {
 
 	// Handle special case of '@me' which maps to the currently authenticated user
 	if name == "@me" {
-		u, _, err := client.Users.CurrentUser()
+		u, _, err := client.Users.CurrentUser(requestOpts...)
 		return u, err
 	}
 
-	users, _, err := client.Users.ListUsers(opts)
+	users, _, err := client.Users.ListUsers(opts, requestOpts...)
 	if err != nil {
 		return nil, err
 	}

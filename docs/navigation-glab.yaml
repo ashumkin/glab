@@ -314,6 +314,8 @@
       url: 'cli/mr/approve/'
     - title: glab mr approvers
       url: 'cli/mr/approvers/'
+    - title: glab mr assign
+      url: 'cli/mr/assign/'
     - title: glab mr checkout
       url: 'cli/mr/checkout/'
     - title: glab mr close
