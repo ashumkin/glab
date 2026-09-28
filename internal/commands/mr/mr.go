@@ -7,6 +7,7 @@ import (
 	"gitlab.com/gitlab-org/cli/internal/cmdutils"
 	mrApproveCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/approve"
 	mrApproversCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/approvers"
+	mrAssignCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/assign"
 	mrCheckoutCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/checkout"
 	mrCloseCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/close"
 	mrCreateCmd "gitlab.com/gitlab-org/cli/internal/commands/mr/create"
@@ -55,6 +56,7 @@ func NewCmdMR(f cmdutils.Factory) *cobra.Command {
 	cmdutils.EnableRepoOverride(mrCmd, f)
 
 	mrCmd.AddCommand(mrApproveCmd.NewCmdApprove(f))
+	mrCmd.AddCommand(mrAssignCmd.NewCmd(f))
 	mrCmd.AddCommand(mrApproversCmd.NewCmdApprovers(f))
 	mrCmd.AddCommand(mrCheckoutCmd.NewCmdCheckout(f))
 	mrCmd.AddCommand(mrCloseCmd.NewCmdClose(f))

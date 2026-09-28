@@ -53,6 +53,7 @@ Specify a merge request in one of the following formats:
 
 - [`approve`](approve.md)
 - [`approvers`](approvers.md)
+- [`assign`](assign.md)
 - [`checkout`](checkout.md)
 - [`close`](close.md)
 - [`create`](create.md)

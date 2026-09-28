@@ -26,3 +26,12 @@ func TestMrCmd_noARgs(t *testing.T) {
 
 	assert.Contains(t, buf.String(), "Use \"mr [command] --help\" for more information about a command.\n")
 }
+
+func TestMrCmdHasAssign(t *testing.T) {
+	t.Parallel()
+
+	cmd := NewCmdMR(cmdtest.NewTestFactory(nil))
+	assign, _, err := cmd.Find([]string{"assign"})
+	require.NoError(t, err)
+	assert.Equal(t, "assign", assign.Name())
+}
