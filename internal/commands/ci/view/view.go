@@ -197,6 +197,7 @@ func NewCmdView(f cmdutils.Factory) *cobra.Command {
 		- %[1]sCtrl+W%[1]s to open current job log in a browser.
 		- %[1]sSpace%[1]s to select job.
 		- %[1]sCtrl+E%[1]s to select manual jobs in the stage of current selected job
+		- %[1]sCtrl+F%[1]s to select runnable (even already run, successful or failed) jobs in the stage of current selected job
 		- %[1]sCtrl+A%[1]s to select manual jobs in the stage of current selected job and after
 		- %[1]sCtrl+Backspace%[1]s to deselect all jobs.
 		- %[1]ss%[1]s to run (start) selected jobs.
@@ -904,6 +905,27 @@ func inputCapture(
 			inputCh <- struct{}{}
 			app.ForceDraw()
 			return nil
+		case tcell.KeyCtrlF:
+			if appSt.modalVisible || appSt.curJob.Kind != Job {
+				break
+			}
+			c := appSt.selectRunnableJobs()
+			if c == 0 {
+				appSt.modalVisible = true
+				modal := tview.NewModal().
+					SetText(fmt.Sprintf("There are no runnable jobs in the stage '%s'", appSt.curJob.Stage)).
+					AddButtons([]string{"✔ OK"}).
+					SetBackgroundColor(tcell.ColorOrangeRed).
+					SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+						appSt.modalVisible = false
+						root.RemovePage("ok")
+						app.ForceDraw()
+					})
+				root.AddAndSwitchToPage("ok", modal, false)
+			}
+			inputCh <- struct{}{}
+			app.ForceDraw()
+			return nil
 		case tcell.KeyEnter:
 			if !appSt.modalVisible {
 				if appSt.curJob.Kind == Job {
@@ -1103,6 +1125,14 @@ func (s *appState) selectManualJobs() {
 func (s *appState) selectManualOrCanceledJobs() int {
 	return s.selectJobWithPredicat(func(job *ViewJob, curJob *ViewJob) bool {
 		return job.Stage == s.curJob.Stage && (job.Status == string(gitlab.Manual) || job.Status == string(gitlab.Canceled))
+	})
+}
+
+func (s appState) selectRunnableJobs() int {
+	return s.selectJobWithPredicat(func(job *ViewJob, curJob *ViewJob) bool {
+		return job.Stage == s.curJob.Stage &&
+			(job.Status == string(gitlab.Manual) || job.Status == string(gitlab.Canceled) ||
+				job.Status == string(gitlab.Success) || job.Status == string(gitlab.Failed))
 	})
 }
 
